@@ -1,0 +1,42 @@
+[contenteditable=true]:empty:before {
+  content: attr(placeholder);
+}
+
+.editable-paragraph {
+  padding: 5px;
+}
+
+.pimcore_editable {
+  border: 1px dashed #333;
+  border-radius: 4px;
+  margin: 5px 0px;
+  min-height: 20px;
+}
+
+.pimcore_editable_wysiwyg, .pimcore_editable_textarea {
+  min-height: 110px;
+}
+
+.pimcore_editable_table table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.pimcore_editable_table table, th, td {
+  border: 1px solid black;
+}
+.pimcore_editable_table th, td {
+  padding: 10px;
+  min-width: 30px;
+  box-sizing: border-box;
+}
+.pimcore_editable_video_empty>img {
+height: 100%;
+width: 100%;
+}
+
+button.custom-button-class {
+  margin-right: 10px;
+  margin-bottom: 5px;
+  border: 1px solid;
+  border-radius: 4px;
+}

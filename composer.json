@@ -1,0 +1,37 @@
+{
+    "name": "corepulse/corepulse",
+    "description": "corepulse cms",
+    "type": "pimcore-bundle",
+    "license": "GPL-3.0+",
+    "authors": [
+        {
+            "name": "khanh",
+            "email": "khanhln.c1003j@gmail.com"
+        }
+    ],
+    "config": {
+        "sort-packages": true,
+        "preferred-install": {
+            "pimcore/pimcore": "source",
+            "*": "dist"
+        }
+    },
+    "require": {
+        "pimcore/pimcore": ">=11.0",
+        "starfruitjsc/validator-bundle": ">=1.0",
+        "google/apiclient": "^2.15.0",
+        "starfruit/builder-bundle": ">=0.7.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "CorepulseBundle\\": "src/"
+        }
+    },
+    "extra": {
+        "pimcore": {
+            "bundles": [
+                "CorepulseBundle\\CorepulseBundle"
+            ] 
+        }
+    }
+}

@@ -1,0 +1,4 @@
+corepulse:
+    # event_listener:
+    #     update_indexing: true
+    #     inspection_index: true

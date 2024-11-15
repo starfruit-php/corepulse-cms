@@ -1,0 +1,77 @@
+services:
+  # default configuration for services in *this* file
+  _defaults:
+    # automatically injects dependencies in your services
+    autowire: true
+    # automatically registers your services as commands, event subscribers, etc.
+    autoconfigure: true
+    # this means you cannot fetch services directly from the container via $container->get()
+    # if you need to do this, you can override this setting on individual services
+    public: false
+
+  # controllers are imported separately to make sure they're public
+  # and have a tag that allows actions to type-hint services
+  CorepulseBundle\Controller\:
+    resource: "../src/Controller/*"
+    public: true
+    tags: ["controller.service_arguments"]
+
+  CorepulseBundle\Command\:
+    resource: "../src/Command"
+    tags: ["console.command"]
+
+  CorepulseBundle\Installer:
+    public: true
+    arguments:
+      $bundle: "@=service('kernel').getBundle('PimcoreAdminBundle')"
+
+  CorepulseBundle\Model\:
+    resource: "../src/Model"
+    public: true
+
+  CorepulseBundle\Security\:
+    resource: "../src/Security"
+    public: true
+
+#   CorepulseBundle\Component\:
+#     resource: "../src/Component"
+#     public: true
+
+
+  CorepulseBundle\EventSubscriber\:
+    resource: "../src/EventSubscriber"
+    public: true
+    tags:
+      - { name: "kernel.event_subscriber" }
+
+  corepulse.security.user_provider:
+    class: CorepulseBundle\Security\UserProvider
+    arguments: ['CorepulseBundle\Model\User', "username"]
+
+  corepulse.security.password_hasher_factory:
+    class: Pimcore\Security\Hasher\Factory\UserAwarePasswordHasherFactory
+    arguments:
+      - CorepulseBundle\Security\Hasher\CorepulseUserPasswordHasher
+      - ["password"]
+    # add more services, or override services that need manual wiring
+    #    CorepulseBundle\ExampleClass:
+    #        arguments:
+    #            - "@service_id"
+    #            - "plain_value"
+    #            - "%parameter%"
+  CorepulseBundle\EventListener\Indexing\SubmitListener:
+    tags:
+      - { name: kernel.event_listener, event: pimcore.dataobject.postAdd, method: postObjectAdd }
+      - { name: kernel.event_listener, event: pimcore.dataobject.postUpdate, method: postObjectUpdate }
+      - { name: kernel.event_listener, event: pimcore.dataobject.postDelete, method: postObjectDelete }
+      - { name: kernel.event_listener, event: pimcore.document.postAdd, method: postDocumentAdd }
+      - { name: kernel.event_listener, event: pimcore.document.postUpdate, method: postDocumentUpdate }
+      - { name: kernel.event_listener, event: pimcore.document.postDelete, method: postDocumentDelete }
+
+#   CorepulseBundle\EventListener\DataObject\ClassDefinitionListener:
+#     tags:
+#       - { name: kernel.event_listener, event: pimcore.class.postUpdate, method: postClassUpdate }
+#       - { name: kernel.event_listener, event: pimcore.class.postAdd, method: postClassUpdate }
+
+#   CorepulseBundle\MessageHandler\SmsNotificationHandler:
+#     tags: ['messenger.message_handler']

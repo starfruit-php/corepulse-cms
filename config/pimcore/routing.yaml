@@ -1,0 +1,13 @@
+corepulse_default:
+  controller: "CorepulseBundle\\Controller\\DefaultController::cms"
+  path: "/corepulse/cms-fe"
+
+corepulse_admin:
+  resource: "../../src/Controller/Admin"
+  type: annotation
+  prefix: "/corepulse"
+
+corepulse_api:
+  resource: "../../src/Controller/Api/*"
+  type: annotation
+  prefix: /corepulse/cms/api

@@ -1,0 +1,21 @@
+imports:
+    - { resource: corepulse.yaml }
+
+pimcore:
+    security:
+        # the password hasher factory as defined in services.yaml
+        password_hasher_factories:
+            CorepulseBundle\Model\User: corepulse.security.password_hasher_factory
+
+security:
+  providers:
+    corepulse_cms_provider:
+      id: corepulse.security.user_provider
+
+corepulse:
+  api_firewall:
+    provider: corepulse_cms_provider
+    stateless: false
+    pattern: ^/corepulse/cms/api(/.*)?$
+    custom_authenticators:
+      - CorepulseBundle\Security\UserAuthenticator

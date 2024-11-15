@@ -1,0 +1,8 @@
+.corepulse-cms {
+    background-image: url(/bundles/corepulse/image/corepulse.png);
+    background-size: 20px 20px;
+}
+
+.corepulse-icon img {
+    object-fit: contain;
+}
