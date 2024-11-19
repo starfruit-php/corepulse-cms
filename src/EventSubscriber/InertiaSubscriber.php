@@ -5,7 +5,7 @@ namespace CorepulseBundle\EventSubscriber;
 use CorepulseBundle\Services\AssetServices;
 use CorepulseBundle\Services\DocumentServices;
 use Pimcore\Db;
-use Rompetomp\InertiaBundle\Service\InertiaInterface;
+// use Rompetomp\InertiaBundle\Service\InertiaInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
@@ -29,8 +29,6 @@ class InertiaSubscriber implements EventSubscriberInterface
     CONST PATH_ROOT = '/cms';
     use PimcoreContextAwareTrait;
 
-    protected $inertia;
-
     protected $security;
 
     protected $twig;
@@ -41,9 +39,8 @@ class InertiaSubscriber implements EventSubscriberInterface
         'text/html',
     ];
 
-    public function __construct(InertiaInterface $inertia, Security $security, protected DocumentResolver $documentResolver, protected PimcoreBundleManager $bundleManager, protected RouterInterface $router, private EditmodeEditableDefinitionCollector $editableConfigCollector, Environment $twig)
+    public function __construct(Security $security, protected DocumentResolver $documentResolver, protected PimcoreBundleManager $bundleManager, protected RouterInterface $router, private EditmodeEditableDefinitionCollector $editableConfigCollector, Environment $twig)
     {
-        $this->inertia = $inertia;
         $this->security = $security;
         $this->twig = $twig;
     }

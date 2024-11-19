@@ -28,6 +28,7 @@ class SettingServices
         return $data;
     }
 
+
     // get data with obect or login
     public static function getData($type)
     {
@@ -45,6 +46,25 @@ class SettingServices
         }
 
         return $item;
+    }
+
+    public static function handleSettingNew($params, $publish, $settingOld)
+    {
+        $settingNew = [];
+        if (!empty($settingOld['config'])) {
+            if ($publish == 'unpublish') {
+                $settingNew = array_diff($settingOld['config'], $params);
+            } else if ($publish == 'publish') {
+                $convert = array_diff($params, $settingOld['config']);
+                $settingNew = array_merge($settingOld['config'], $convert);
+            }
+
+            $settingNew = array_values($settingNew);
+        } else if ($publish == 'publish') {
+            $settingNew = $params;
+        }
+
+        return $settingNew;
     }
 
     public static function updateConfig($type, $data)

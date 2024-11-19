@@ -12,6 +12,7 @@ class DatabaseServices
     const COREPULSE_ORDER_TIMELINE_TABLE = 'corepulse_order_timeline';
     const COREPULSE_CLASS_TABLE = 'corepulse_class';
     const COREPULSE_TRANSLATION_TABLE = 'corepulse_translations';
+    const COREPULSE_USER_TABLE = 'corepulse_users';
 
     public static function createTables()
     {
@@ -20,8 +21,22 @@ class DatabaseServices
         self::createCorepulseOrderTimeline();
         self::createCorepulseClass();
         self::createCorepulseTranslation();
+        self::initUserDefault();
     }
 
+    public static function initUserDefault()
+    {
+        $password = '$2y$12$ZtZ.pFfXxlDRuH9ivcjlRO80XKiKeHBCtVc7n1skI8IxAvwebDo9W';
+
+        $query = " INSERT INTO " . self::COREPULSE_USER_TABLE . " (`id`, `username`, `password`,`defaultAdmin`, `admin`, `active`)
+                SELECT 1, 'admin', $password, 1, 1, 1
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM `corepulse_users` WHERE `id` = 1
+                )";
+
+        Db::get()->executeQuery($query);
+    }
+    
     public static function updateTables()
     {
         self::createTables();

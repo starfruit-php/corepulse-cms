@@ -28,7 +28,7 @@ pimcore.plugin.CorepulseBundle = Class.create({
                     var tabPanel = Ext.getCmp("pimcore_panel_tabs");
                     tabPanel.setActiveItem("corepulseBundle");
                 } else {
-                    new pimcore.plugin.admin.extendPanel('/admin/vuetify/setting/object','corepulseBundle','Corepulse CMS Setting', 'corepulse-cms');
+                    new pimcore.plugin.admin.extendPanel('/corepulse/cms-fe?is-admin=corepulse','corepulseBundle','Corepulse CMS Setting', 'corepulse-cms');
                     localStorage.setItem('corepulseBundle', 'corepulseBundle');
                 }
             });

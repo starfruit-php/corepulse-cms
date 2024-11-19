@@ -331,6 +331,7 @@ class ObjectController extends BaseController
                 'key' => 'required',
                 'parentId' => 'numeric',
                 'folderName' => '',
+                'checked' => ''
             ];
 
             $errorMessages = $this->validator->validate($condition, $this->request);
@@ -372,13 +373,15 @@ class ObjectController extends BaseController
                 $object->setParent($parent);
                 $object->save();
 
-                $data['data'] =  DataObjectServices::getData($object, $fields);
+                if ($this->request->get('checked')) {
+                    return $this->sendResponse(['success' => true, 'message' => 'Create success']);
+                }
 
+                $data['data'] =  DataObjectServices::getData($object, $fields);
                 return $this->sendResponse($data);
             }
 
             return $this->sendError($className . ' with ' . $key . " already exists");
-
         } catch (\Exception $e) {
             return $this->sendError($e->getMessage());
         }

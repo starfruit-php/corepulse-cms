@@ -2,12 +2,12 @@
 
 namespace CorepulseBundle\Controller\Admin;
 
-use Pimcore\Db;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
 use Pimcore\Model\DataObject\ClassDefinition;
 use CorepulseBundle\Services\SettingServices;
 use CorepulseBundle\Model\User;
+use CorepulseBundle\Services\UserServices;
 
 /**
  * @Route("/setting")
@@ -19,57 +19,49 @@ class SettingController extends BaseController
      */
     public function objectLogin()
     {
-        if ($this->request->isMethod(Request::METHOD_POST)) {
-            $publish = $this->request->get('publish');
-            $params = $this->request->get('params');
+        try {
+            if ($this->request->isMethod(Request::METHOD_POST)) {
+                $publish = $this->request->get('publish');
+                $params = $this->request->get('params');
 
-            $settingOld = SettingServices::getData('object');
-            $settingNew = [];
+                $settingOld = SettingServices::getData('object');
 
-            if (!empty($settingOld['config'])) {
-                if ($publish == 'unpublish') {
-                    $settingNew = array_diff($settingOld['config'], $params);
-                } else if ($publish == 'publish') {
-                    $convert = array_diff($params, $settingOld['config']);
-                    $settingNew = array_merge($settingOld['config'], $convert);
-                }
+                $settingNew = SettingServices::handleSettingNew($params, $publish, $settingOld);
 
-                $settingNew = array_values($settingNew);
-            } else if ($publish == 'publish') {
-                $settingNew = $params;
+                $update = SettingServices::updateConfig('object', $settingNew);
+
+                return $this->sendResponse(['success' => true, 'message' => 'Setting success']);
             }
 
-            $update = SettingServices::updateConfig('object', $settingNew);
+            $conditions = $this->getPaginationConditions($this->request, []);
+            list($page, $limit, $condition) = $conditions;
 
-            return $this->sendResponse(['success' => true, 'message' => 'Setting success']);
-        }
+            $objectSetting = SettingServices::getData('object');
+            $blackList = ["user", "role"];
 
-        $conditions = $this->getPaginationConditions($this->request, []);
-        list($page, $limit, $condition) = $conditions;
+            $data = SettingServices::getObjectSetting($blackList, $objectSetting['config']);
 
-        $objectSetting = SettingServices::getData('object');
-        $blackList = ["user", "role"];
+            $pagination = $this->paginator($data, $page, $limit);
 
-        $data = SettingServices::getObjectSetting($blackList, $objectSetting['config']);
-
-        $pagination = $this->paginator($data, $page, $limit);
-
-        $result = [
-            'paginationData' => $pagination->getPaginationData(),
-            'data' => []
-        ];
-
-        foreach($pagination as $item) {
-            $classDefinition = ClassDefinition::getById($item['id']);
-            $result['data'][] =  [
-                'id' => $item['id'],
-                'name' => $item['name'],
-                'title' => $classDefinition?->getTitle() ? $classDefinition->getTitle() : $item['name'],
-                'checked' => $item['checked'] == true ? 'publish' : 'unpublish',
+            $result = [
+                'paginationData' => $pagination->getPaginationData(),
+                'data' => []
             ];
-        }
 
-        return $this->sendResponse($result);
+            foreach($pagination as $item) {
+                $classDefinition = ClassDefinition::getById($item['id']);
+                $result['data'][] =  [
+                    'id' => $item['id'],
+                    'name' => $item['name'],
+                    'title' => $classDefinition?->getTitle() ? $classDefinition->getTitle() : $item['name'],
+                    'checked' => $item['checked'] == true ? 'publish' : 'unpublish',
+                ];
+            }
+
+            return $this->sendResponse($result);
+        } catch (\Throwable $th) {
+            return $this->sendError($th->getMessage());
+        }
     }
 
     /**
@@ -77,23 +69,27 @@ class SettingController extends BaseController
      */
     public function settingAppearance()
     {
-        if ($this->request->isMethod(Request::METHOD_POST)) {
-            $condition = [
-                'params' => 'required',
-            ];
-            $messageError = $this->validator->validate($condition, $this->request);
-            if($messageError) return $this->sendError($messageError);
+        try {
+            if ($this->request->isMethod(Request::METHOD_POST)) {
+                $condition = [
+                    'params' => 'required',
+                ];
+                $messageError = $this->validator->validate($condition, $this->request);
+                if($messageError) return $this->sendError($messageError);
 
-            $params = json_decode($this->request->get('params'), true);
+                $params = json_decode($this->request->get('params'), true);
 
-            $update = SettingServices::updateConfig('appearance', $params);
+                $update = SettingServices::updateConfig('appearance', $params);
 
-            return $this->sendResponse(['success' => true, 'message' => 'Setting success']);
+                return $this->sendResponse(['success' => true, 'message' => 'Setting success']);
+            }
+
+            $result = SettingServices::getData('appearance');
+
+            return $this->sendResponse($result);
+        } catch (\Throwable $th) {
+            return $this->sendError($th->getMessage());
         }
-
-        $result = SettingServices::getData('appearance');
-
-        return $this->sendResponse($result);
     }
 
     /**
@@ -101,27 +97,83 @@ class SettingController extends BaseController
      */
     public function settingUser()
     {
-        if ($this->request->isMethod(Request::METHOD_POST)) {
+        try {
+            if ($this->request->isMethod(Request::METHOD_POST)) {
+                $condition = [
+                    'id' => '',
+                    'username' => 'required',
+                    'password' => 'required',
+                ];
+                $messageError = $this->validator->validate($condition, $this->request);
+                if($messageError) return $this->sendError($messageError);
+
+                $params = [
+                    'username' => $this->request->get('username'),
+                    'password' => $this->request->get('password'),
+                ];
+
+                if ($id = $this->request->get('id')) {
+                $user = User::getById($id);
+                } else {
+                    $user = new User;
+                    $user->setDefaultAdmin(1);
+                }
+
+                $update = UserServices::edit($params, $user);
+
+                return $this->sendResponse(['success' => true, 'message' => 'Setting success']);
+            }
+
+            $user = new User\Listing();
+            $user->addConditionParam('defaultAdmin = 1');
+            $user = $user->current();
+
+            $result = [
+                'id' => $user?->getId(),
+                'username' => $user?->getUserName(),
+                'password' => '',
+            ];
+
+            return $this->sendResponse($result);
+        } catch (\Throwable $th) {
+            return $this->sendError($th->getMessage());
+        }
+    }
+
+    /**
+     * @Route("/edit-object", name="corepulse_setting_edit_object", methods={"POST"})
+     */
+    public function editObject(Request $request)
+    {
+        try {
             $condition = [
-                'params' => 'required',
+                'id' => 'required',
+                'checked' => 'required',
+                'name' => '',
+                'title' => '',
             ];
             $messageError = $this->validator->validate($condition, $this->request);
             if($messageError) return $this->sendError($messageError);
 
+            $title = $this->request->get('title');
+            $settingOld = SettingServices::getData('object');
+            $publish = $this->request->get('checked');
+            $id = $this->request->get('id');
+            $params = [$id];
 
+            $settingNew = SettingServices::handleSettingNew($params, $publish, $settingOld);
+
+            $update = SettingServices::updateConfig('object', $settingNew);
+
+            $classDefinition = ClassDefinition::getById($id);
+            if ($classDefinition && $title) {
+                $classDefinition->setTitle($this->request->get('title'));
+                $classDefinition->save();
+            }
 
             return $this->sendResponse(['success' => true, 'message' => 'Setting success']);
+        } catch (\Throwable $th) {
+            return $this->sendError($th->getMessage());
         }
-
-        $user = new User\Listing();
-        $user->addConditionParam('defaultAdmin = 1');
-        $user = $user->current();
-
-        $result = [
-            'username' => $user?->getUserName(),
-            'password' => $user?->getPassword(),
-        ];
-
-        return $this->sendResponse($result);
     }
 }
