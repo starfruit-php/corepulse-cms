@@ -46,8 +46,7 @@ class DashboardController extends BaseController
             $object->setCondition($conditionQuery, $conditionParams);
             $totalObject = $object->count();
 
-            $users = new \Pimcore\Model\User\Listing();
-            $users->setCondition('id != 0');
+            $users = new \CorepulseBundle\Model\User\Listing();
             $totalUser = $users->count();
 
             //get list changes
@@ -74,6 +73,7 @@ class DashboardController extends BaseController
                     'id' => $item->getCid(),
                     'name' => $objectDetail?->getKey(),
                     'type' => $objectDetail?->getClassName(),
+                    'class' => $objectDetail?->getClassId(),
                     'userName' => $infoUser?->getName(),
                     'date' => self::getTimeAgo($item->getDate()),
                 ];
@@ -135,16 +135,14 @@ class DashboardController extends BaseController
             //get folder object
             $objectSetting = Db::get()->fetchAssociative('SELECT * FROM `corepulse_settings` WHERE `type` = "object"', []);
             $classes = [];
-            if ($objectSetting !== null && $objectSetting) {
-                // lấy danh sách bảng
-                $query = 'SELECT * FROM `classes`';
-                $classListing = Db::get()->fetchAllAssociative($query);
+            if ($objectSetting) {
                 $dataObjectSetting = json_decode($objectSetting['config']) ?? [];
-                foreach ($classListing as $class) {
-                    if (in_array($class['id'], $dataObjectSetting)) {
-
-                        $newData["id"] = $class["id"];
-                        $newData["name"] = $class["name"];
+                foreach ($dataObjectSetting as $classId) {
+                    $classDefinition = DataObject\ClassDefinition::getById($classId);
+                    if ($classDefinition) {
+                        $newData["id"] = $classId;
+                        $newData["name"] = $classDefinition?->getName();
+                        $newData["title"] = $classDefinition?->getTitle() ?? $classDefinition?->getName();
                         $newData["fullPath"] = '/bundles/pimcoreadmin/img/flat-color-icons/folder.svg';
                         $classes[] = $newData;
                     }

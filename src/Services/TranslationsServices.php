@@ -74,4 +74,6 @@ class TranslationsServices
         }
         return $result;
     }
+
+    static public function 
 }

@@ -2,15 +2,11 @@
 
 namespace CorepulseBundle\Controller\Api;
 
+use Pimcore\Model\Translation;
 use Pimcore\Translation\Translator;
-use Symfony\Component\HttpFoundation\RequestStack;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
-use Knp\Component\Pager\PaginatorInterface;
-use CorepulseBundle\Services\AssetServices;
-use DateTime;
 use Pimcore\Db;
 use CorepulseBundle\Services\TranslationsServices;
 use Pimcore\Tool;
@@ -21,7 +17,7 @@ use Pimcore\Tool;
 class TranslationsController extends BaseController
 {
     /**
-     * @Route("/listing", name="api_trans_listing", methods={"GET"})
+     * @Route("/listing", name="corepulse_api_trans_listing", methods={"GET"})
      *
      * {mô tả api}
      *
@@ -31,86 +27,54 @@ class TranslationsController extends BaseController
      *
      * @throws \Exception
      */
-    public function listingAction(
-        Request $request,
-        PaginatorInterface $paginator): JsonResponse
+    public function listingAction()
     {
         try {
             $this->setLocaleRequest();
 
-            $orderByOptions = ['creationDate'];
-            $conditions = $this->getPaginationConditions($request, $orderByOptions);
+            $conditions = $this->getPaginationConditions($this->request, []);
             list($page, $limit, $condition) = $conditions;
 
-            $condition = array_merge($condition, [
-                'language' => '',
-                'search' => '',
-            ]);
-            $messageError = $this->validator->validate($condition, $request);
+            $messageError = $this->validator->validate($condition, $this->request);
             if($messageError) return $this->sendError($messageError);
 
-            $languages = Tool::getValidLanguages();
+            $conditionQuery =  "`type` = 'simple'";
+            $conditionParams = [];
 
-            if ($limit) {
-                if ($limit == "-1") {
-                    $limit = 999999999;
+            $filterRule = $this->request->get('filterRule');
+            $filter = $this->request->get('filter');
+
+            if ($filterRule && $filter) {
+                $arrQuery = $this->getQueryCondition($filterRule, $filter);
+
+                if ($arrQuery['query']) {
+                    $conditionQuery .= ' AND (' . $arrQuery['query'] . ')';
+                    $conditionParams = array_merge($conditionParams, $arrQuery['params']);
                 }
-                $limit = (int)count($languages) * (int)$limit;
-            } else {
-                $limit = 20;
-            }
-            $offset = ($page - 1) * $limit;
-
-            $language = $request->get('language');
-
-            $queryBuilder  = Db::getConnection()->createQueryBuilder();
-            $queryBuilder->from('corepulse_translations', 'trans');
-            $queryBuilder->addSelect(['trans.key']);
-            $queryBuilder->addSelect(['trans.text']);
-            $queryBuilder->addSelect(['trans.language']);
-
-            if ($language) {
-                $queryBuilder->where('trans.language = :language');
-                $queryBuilder->setParameter(':language', $language);
             }
 
-            $queryBuilder->setFirstResult($offset);
-            $queryBuilder->setMaxResults($limit);
+            $translations = new Translation\Listing();
+            $translations->setCondition($conditionQuery, $conditionParams);
 
-            $dataAll = $queryBuilder->execute()->fetchAll();
-            $dataLength = count($dataAll)/2;
+            $pagination = $this->paginator($translations->load(), $page, $limit);
+            $data = [
+                'paginationData' => $pagination->getPaginationData(),
+                'data' => [],
+                'column' => array_merge(['key'], Tool::getValidLanguages()),
+            ];
 
-            $list = $queryBuilder->execute()->fetchAll();
-            $paginationData = $this->helperPaginator($paginator, $list, $page, $limit);
-            $data = array_merge(
-                [
-                    'data' => []
-                ],
-                $paginationData,
-            );
-
-            foreach ($list as $row) {
-                $key = $row['key'];
-                $language = $row['language'];
-
-                if (!array_key_exists($key,  $data['data'])) {
-                    $data['data'][$key] = ["key" => $key];
-                }
-
-                $data['data'][$key][$language] = $row['text'] ? $row['text'] : $key;
+            foreach ($pagination as $item) {
+                $data['data'][] = $this->getData($item);
             }
-
-            $data['data'] = array_values($data['data']);
 
             return $this->sendResponse($data);
-
         } catch (\Exception $e) {
             return $this->sendError($e->getMessage(), 500);
         }
     }
 
     /**
-     * @Route("/create", name="api_trans_create", methods={"POST"})
+     * @Route("/create", name="corepulse_api_trans_create", methods={"POST"})
      *
      * {mô tả api}
      *
@@ -186,7 +150,7 @@ class TranslationsController extends BaseController
     }
 
     /**
-     * @Route("/add", name="api_trans_add", methods={"GET"})
+     * @Route("/add", name="corepulse_api_trans_add", methods={"GET"})
      *
      * {mô tả api}
      *
@@ -256,7 +220,7 @@ class TranslationsController extends BaseController
     }
 
      /**
-     * @Route("/update", name="api_trans_update", methods={"POST"})
+     * @Route("/update", name="corepulse_api_trans_update", methods={"POST"})
      *
      * {mô tả api}
      *
@@ -315,7 +279,7 @@ class TranslationsController extends BaseController
     }
 
     /**
-     * @Route("/delete", name="api_trans_delete", methods={"GET"})
+     * @Route("/delete", name="corepulse_api_trans_delete", methods={"GET"})
      *
      * {mô tả api}
      *
@@ -362,16 +326,9 @@ class TranslationsController extends BaseController
     }
 
     // Trả ra dữ liệu
-    public function listingResponse($data, $item)
+    public function getData($item)
     {
-        $key = $item['key'];
-        $language = $item['language'];
-
-        if (!array_key_exists($key, $data)) {
-            $data[$key] = ["id" => $key];
-        }
-
-        $data[$key][$language] = $item['text'];
+        $data = array_merge(['key' => $item->getKey()], $item->getTranslations());
 
         return $data;
     }

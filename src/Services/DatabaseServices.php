@@ -29,14 +29,14 @@ class DatabaseServices
         $password = '$2y$12$ZtZ.pFfXxlDRuH9ivcjlRO80XKiKeHBCtVc7n1skI8IxAvwebDo9W';
 
         $query = " INSERT INTO " . self::COREPULSE_USER_TABLE . " (`id`, `username`, `password`,`defaultAdmin`, `admin`, `active`)
-                SELECT 1, 'admin', $password, 1, 1, 1
+                SELECT 1, 'admin', '$password', 1, 1, 1
                 WHERE NOT EXISTS (
                     SELECT 1 FROM `corepulse_users` WHERE `id` = 1
                 )";
 
         Db::get()->executeQuery($query);
     }
-    
+
     public static function updateTables()
     {
         self::createTables();

@@ -405,21 +405,16 @@ class ObjectController extends BaseController
 
             $datas = [];
             if ($objectSetting) {
-                $query = 'SELECT * FROM `classes`';
-                $classListing = Db::get()->fetchAllAssociative($query);
                 $dataObjectSetting = json_decode($objectSetting['config']) ?? [];
                 $data = [];
-                foreach ($classListing as $class) {
-                    if (in_array($class['id'], $dataObjectSetting)) {
-                        $classDefinition = DataObject\ClassDefinition::getById($class['id']);
+                foreach ($dataObjectSetting as $classId) {
+                    $classDefinition = DataObject\ClassDefinition::getById($classId);
+                    if ($classDefinition) {
+                        $newData["id"] = $classId;
+                        $newData["name"] = $classDefinition?->getName();
+                        $newData["title"] = $classDefinition?->getTitle() ?? $classDefinition?->getName();
 
-                        if ($classDefinition) {
-                            $newData["id"] = $class["id"];
-                            $newData["name"] = $class["name"];
-                            $newData["title"] = $classDefinition?->getTitle() ?? $classDefinition?->getName();
-
-                            $data[] = $newData;
-                        }
+                        $data[] = $newData;
                     }
                 }
                 $datas['data'] = $data;

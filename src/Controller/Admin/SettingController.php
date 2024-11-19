@@ -8,6 +8,8 @@ use Pimcore\Model\DataObject\ClassDefinition;
 use CorepulseBundle\Services\SettingServices;
 use CorepulseBundle\Model\User;
 use CorepulseBundle\Services\UserServices;
+use CorepulseBundle\Services\ClassServices;
+use Pimcore\Db;
 
 /**
  * @Route("/setting")
@@ -29,6 +31,8 @@ class SettingController extends BaseController
                 $settingNew = SettingServices::handleSettingNew($params, $publish, $settingOld);
 
                 $update = SettingServices::updateConfig('object', $settingNew);
+
+                self::save($settingNew);
 
                 return $this->sendResponse(['success' => true, 'message' => 'Setting success']);
             }
@@ -175,5 +179,15 @@ class SettingController extends BaseController
         } catch (\Throwable $th) {
             return $this->sendError($th->getMessage());
         }
+    }
+
+    public static function save($dataSave)
+    {
+        foreach ($dataSave as $classId) {
+            $params = ClassServices::examplesAction($classId);
+            $update = ClassServices::updateTable($classId, $params);
+        }
+
+        return $dataSave;
     }
 }
