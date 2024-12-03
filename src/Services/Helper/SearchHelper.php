@@ -44,6 +44,7 @@ class SearchHelper
                         }
                     }
 
+                    self::insertOrUpdateConfig($class["id"], $visibleSearch);
                     if (!empty($visibleSearch)) {
                         $dataConfig[] = [
                             "visibleSearch" => $visibleSearch,
@@ -69,108 +70,94 @@ class SearchHelper
             || $item instanceof \Pimcore\Model\DataObject\ClassDefinition\Data\Lastname
             || $item instanceof \Pimcore\Model\DataObject\ClassDefinition\Data\Firstname
             || $item instanceof \Pimcore\Model\DataObject\ClassDefinition\Data\Textarea
-        ) return true;
+        ) {
+            return true;
+        }
+
         return false;
     }
 
-    public static function getTree($model, $keyword = null, $config = [], $limit = 0)
+    public static function getTree($model, $keyword = null, $config = [])
     {
-        $data = [];
         $conditionQuery = "";
         $conditionParams = [];
 
-        $modelName = '\\Pimcore\\Model\\' . ucfirst($model) . '\Listing';
+        if ($keyword) $keyword = htmlspecialchars(strip_tags(strtolower($keyword)));
 
-        if ($keyword) {
-            $keyword = strtolower($keyword);
-
-            switch ($model) {
-                case 'asset':
+        switch ($model) {
+            case 'asset':
+                $modelName = '\\Pimcore\\Model\\' . ucfirst($model) . '\\Listing';
+                if ($keyword) {
                     $conditionQuery .= "LOWER(`filename`) LIKE :key OR LOWER(`path`) LIKE :key";
                     $conditionParams['key'] = "%" . $keyword . "%";
-                    break;
-                case 'document':
+                }
+                break;
+            case 'document':
+                $modelName = '\\Pimcore\\Model\\' . ucfirst($model) . '\\Listing';
+                if ($keyword) {
                     $conditionQuery .= "LOWER(`key`) LIKE :key OR LOWER(`path`) LIKE :key";
                     $conditionParams['key'] = "%" . $keyword . "%";
-                    break;
-                default:
-                    if (!empty($config)) {
-                        $modelName = '\\Pimcore\\Model\\DataObject\\' . ucfirst($model) . '\Listing';
-
-                        $conditionQuery .= "LOWER(`key`) LIKE :key OR LOWER(`path`) LIKE :key";
-                        foreach ($config as $conf) {
-                            $conditionQuery .= " OR LOWER(`" . $conf . "`) LIKE :" . $conf;
-                            $conditionParams[$conf] = "%" . $keyword . "%";
-                        }
-                        $conditionParams['key'] = "%" . $keyword . "%";
+                }
+                break;
+            case 'dataObject':
+                $modelName = '\\Pimcore\\Model\\DataObject\\Listing';
+                if ($keyword) {
+                    $conditionQuery .= "LOWER(`key`) LIKE :key OR LOWER(`path`) LIKE :key";
+                    $conditionParams['key'] = "%" . $keyword . "%";
+                }
+                break;
+            default:
+                $modelName = '\\Pimcore\\Model\\DataObject\\' . ucfirst($model) . '\\Listing';
+                if ($keyword) {
+                    $conditionQuery .= "LOWER(`key`) LIKE :key OR LOWER(`path`) LIKE :key";
+                    foreach ($config as $conf) {
+                        $conditionQuery .= " OR LOWER(`" . $conf . "`) LIKE :" . $conf;
+                        $conditionParams[$conf] = "%" . $keyword . "%";
                     }
-                    break;
-            }
+                    $conditionParams['key'] = "%" . $keyword . "%";
+                }
+
+                break;
         }
 
         $listing = new $modelName();
         $listing->setCondition($conditionQuery, $conditionParams);
-        $listing->setOrderKey('id');
-        $listing->setOrder('ASC');
 
-        if ($limit) {
-            $listing->setLimit($limit);
-        }
-
-        if ($model != 'asset') {
-            $listing->setUnpublished(true);
-        }
-
-        $listing->load();
-
-        foreach ($listing as $item) {
-            $class = '';
-
-            if ($item->getType()) {
-                if ($model == 'dataObject' && $item->getType() != 'folder') {
-                    $class = $item->getClassName();
-                } else {
-                    if ($model != 'asset' && $model != 'document') {
-                        $class = $model;
-                        $model = 'dataObject';
-                    }
-                }
-
-                $icon = self::getIcon($item->getType());
-                $route = self::getRoute($model);
-
-                $data[] = [
-                    'id' => $item->getId(),
-                    'name' => $item->getId() == 1 ? 'home' : $item->getKey(),
-                    'path' => $item->getFullPath(),
-                    'type' => $item->getType(),
-                    'model' => $model,
-                    'class' => $class,
-                    'icon' => $icon,
-                    'route' => $route,
-                ];
-            }
-        }
-
-        return $data;
+        return $listing;
     }
 
-    public static function getRoute($type)
+    public static function getData($item, $model = 'dataObject')
     {
-        $route = '';
-        if ($type == 'dataObject') {
-            $route = 'vuetify_object_detail';
+
+        switch ($model) {
+            case 'asset':
+                $name = 'media-library';
+                $model = $item->getType();
+                break;
+            case 'document':
+                $name = 'pages';
+                $model = $item->getType();
+                break;
+            case 'dataObject':
+                if($item->getType() != 'folder') {
+                    $name = $item->getClassId();
+                }
+                break;
+            default:
+                $name = $model;
+                $model = 'dataObject';
+                break;
         }
 
-        if ($type == 'asset') {
-            $route = 'vuetify_asset_detail';
-        }
-
-        if ($type == 'document') {
-            $route = 'vuetify_doc_detail';
-        }
-
-        return $route;
+        $data = [
+            'id' => $item->getId(),
+            'title' => $item->getId() == 1 ? 'home' : $item->getKey(),
+            'path' => $item->getFullPath(),
+            'name' => $name,
+            'model' => $model,
+            'route' => '',
+        ];
+        return $data;
     }
 
     public static function getIcon($type)
@@ -233,5 +220,39 @@ class SearchHelper
         }
 
         return $datas;
+    }
+
+    public static function insertOrUpdateConfig($type, $config)
+    {
+        return self::insertOrUpdate('corepulse_settings', ['type', 'config'], [$type, implode(',', $config)], 'type');
+        // $config = implode(',',$config);
+
+        // $sql = "INSERT INTO `corepulse_settings` (type, config)
+        // VALUES (?, ?)
+        // ON DUPLICATE KEY UPDATE
+        //     config = VALUES(config);";
+
+        // $connect = Db::get()->fetchAssociative($sql, [$type, $config]);
+
+        // return $connect;
+    }
+
+    public static function insertOrUpdateHistory($userId, $data)
+    {
+        return self::insertOrUpdate('corepulse_search_history', ['userId', 'data'], [$userId, implode(',', $data)], 'userId');
+    }
+
+    public static function insertOrUpdate($table, $columns, $values, $uniqueColumn)
+    {
+        $values = is_array($values) ? implode(',', $values) : $values;
+
+        $placeholders = implode(',', array_fill(0, count($columns), '?'));
+
+        $sql = "INSERT INTO `$table` (" . implode(',', $columns) . ")
+                VALUES ($placeholders)
+                ON DUPLICATE KEY UPDATE
+                    " . implode(', ', array_map(fn($col) => "$col = VALUES($col)", $columns)) . ";";
+
+        return Db::get()->fetchAssociative($sql, $values);
     }
 }

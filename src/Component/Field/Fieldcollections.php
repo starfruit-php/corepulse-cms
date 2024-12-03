@@ -45,6 +45,11 @@ class Fieldcollections extends AbstractField
         return $resultItems;
     }
 
+    public function formatDocumentSave($value)
+    {
+        return $value;
+    }
+    
     public function formatDataSave($values)
     {
         $items = new DataObject\Fieldcollection();
@@ -83,7 +88,7 @@ class Fieldcollections extends AbstractField
     private function createComponent($fieldDefinition, $value)
     {
         $getClass = '\\CorepulseBundle\\Component\\Field\\' . ucfirst($fieldDefinition->getFieldType());
-        return class_exists($getClass) ? new $getClass($this->getObject(), null, $value) : null;
+        return class_exists($getClass) ? new $getClass($this->getObjectOrDocument(), null, $value) : null;
     }
 
     public function getDefinitions()

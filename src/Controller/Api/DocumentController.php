@@ -17,6 +17,8 @@ use DateTime;
 use Pimcore\Model\Document\DocType;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Pimcore\Model\Tool;
+use Pimcore\Document\Editable\EditmodeEditableDefinitionCollector;
+use Pimcore\Document\Renderer\DocumentRenderer;
 
 /**
  * @Route("/document")
@@ -24,7 +26,7 @@ use Pimcore\Model\Tool;
 class DocumentController extends BaseController
 {
     /**
-     * @Route("/listing", name="api_document_listing", methods={"GET"})
+     * @Route("/listing", name="corepulse_api_document_listing", methods={"GET"})
      *
      * {mô tả api}
      *
@@ -34,51 +36,37 @@ class DocumentController extends BaseController
      *
      * @throws \Exception
      */
-    public function listingAction(
-        Request $request,
-        PaginatorInterface $paginator
-    ): JsonResponse {
+    public function listing(): JsonResponse {
         try {
-            $this->setLocaleRequest();
-
-            $orderByOptions = ['index'];
-            $conditions = $this->getPaginationConditions($request, $orderByOptions);
+            $conditions = $this->getPaginationConditions($this->request, []);
             list($page, $limit, $condition) = $conditions;
 
             $condition = array_merge($condition, [
-                'order_by' => '',
-                'order' => '',
-                'folderId' => '',
+                'parentId' => 'numeric',
                 'type' => '',
                 'filterRule' => '',
                 'filter' => '',
             ]);
-            $messageError = $this->validator->validate($condition, $request);
+            $messageError = $this->validator->validate($condition, $this->request);
             if ($messageError) return $this->sendError($messageError);
 
             $conditionQuery = 'id is not NULL';
             $conditionParams = [];
 
-            $id = $request->get('folderId') ? $request->get('folderId') : 1;
-            if ($id) {
-                if ($id == 1) {
-                    $conditionQuery .= ' AND (parentId = :parentId OR parentId = :parentId2)';
-                    $conditionParams['parentId'] = $id;
-                    $conditionParams['parentId2'] = 0;
-                } else {
-                    $conditionQuery .= ' AND parentId = :parentId';
-                    $conditionParams['parentId'] = $id;
-                }
+            $parentId = $this->request->get('parentId', 1);
+            if (is_numeric($parentId)) {
+                $conditionQuery .= ' AND parentId = :parentId';
+                $conditionParams['parentId'] = $parentId;
             }
 
-            $type = $request->get('type') ? $request->get('type') : '';
+            $type = $this->request->get('type') ? $this->request->get('type') : '';
             if ($type) {
                 $conditionQuery .= ' AND type = :type';
                 $conditionParams['type'] = $type;
             }
 
-            $filterRule = $request->get('filterRule');
-            $filter = $request->get('filter');
+            $filterRule = $this->request->get('filterRule');
+            $filter = $this->request->get('filter');
 
             if ($filterRule && $filter) {
                 $arrQuery = $this->getQueryCondition($filterRule, $filter);
@@ -89,40 +77,26 @@ class DocumentController extends BaseController
                 }
             }
 
-            $orderBy = $request->get('order_by', 'index');
-            $order = $request->get('order', 'asc');
-
-            if (!$orderBy) {
-                $orderBy = 'index';
-            }
+            $orderKey = $this->request->get('order_by');
+            $order = $this->request->get('order');
+            if (empty($orderKey)) $orderKey = 'index';
+            if (empty($order)) $order = 'desc';
 
             $list = new Document\Listing();
-            $list->setOrderKey($orderBy);
+            $list->setOrderKey($orderKey);
             $list->setOrder($order);
             $list->setCondition($conditionQuery, $conditionParams);
+            $list->setUnpublished(true);
 
-            $paginationData = $this->helperPaginator($paginator, $list, $page, $limit);
-            $data = array_merge(
-                [
-                    'data' => []
-                ],
-                $paginationData,
-            );
+            $paginationData = $this->paginator( $list, $page, $limit);
+            $data = [
+                'data' => [],
+                'paginationData' => $paginationData->getPaginationData(),
+            ];
 
             foreach ($list as $item) {
-                $checkName = strpos($item->getKey(), 'email');
-                if ($checkName === false) {
-                    $data['data'][] = self::listingResponse($item);
-                }
+                $data['data'][] = self::listingResponse($item);
             }
-
-            usort($data['data'], function($a, $b) use ($orderBy, $order) {
-                if ($order == 'asc') {
-                    return $a[$orderBy] <=> $b[$orderBy];
-                } else {
-                    return $b[$orderBy] <=> $a[$orderBy];
-                }
-            });
 
             return $this->sendResponse($data);
         } catch (\Exception $e) {
@@ -131,7 +105,7 @@ class DocumentController extends BaseController
     }
 
     /**
-     * @Route("/detail", name="api_document_detail", methods={"GET"})
+     * @Route("/detail/{id}", name="corepulse_api_document_detail", methods={"GET", "POST"})
      *
      * {mô tả api}
      *
@@ -141,34 +115,47 @@ class DocumentController extends BaseController
      *
      * @throws \Exception
      */
-    public function detailAction(
-        Request $request,
-        PaginatorInterface $paginator
-    ): JsonResponse {
+    public function detail()
+    {
         try {
             $condition = [
                 'id' => 'required',
             ];
 
-            $errorMessages = $this->validator->validate($condition, $request);
+            $errorMessages = $this->validator->validate($condition, $this->request);
             if ($errorMessages) return $this->sendError($errorMessages);
 
-            $id = $request->get('id');
+            $id = $this->request->get('id');
             $document = Document::getById($id);
             if ($document) {
-                // $res = $this->renderView($document->getTemplate(), ['editmode' => true, 'document' => $document]);
+                if($this->request->isMethod(Request::METHOD_POST)) {
+                    $params = $this->request->get('data');
+                    if ($params) {
+                        $params = json_decode($params, true);
+                        foreach ($params as $key => $value) {
+                            $document = DocumentServices::processField($document, $value);
+                            if (!$document instanceof Document) {
+                                return $this->sendResponse(['success' => false, 'message' => $document['name'] . ': ' . $document['error']]);
+                            }
+                        }
 
-                $data['data'] = [];
+                        $document->setPublished($this->request->get('_publish') === 'publish');
+                        $document->save();
+                        return $this->sendResponse(['success' => true, 'message' => "Update document success"]);
+                    }
+                }
+
+                $sidebar = DocumentServices::getSidebar($document);
+
+                $data = [
+                    'data' => [],
+                    'sidebar' => $sidebar,
+                ];
+
                 if ($document->getType() != 'folder') {
-
                     $data['data'] = self::detailResponse($document);
-
                     $editTables = $document->getEditables();
                     foreach ($editTables as $key => $value) {
-                        if ($value->getType() == 'input') {
-
-                            dd ($value->getData());
-                        }
                         $function = 'get'. ucwords($value->getType());
                         $data['data']['editTables'][] = [
                             'name' => $value->getName(),
@@ -177,6 +164,7 @@ class DocumentController extends BaseController
                         ];
                     }
                 }
+                
                 return $this->sendResponse($data);
             }
             return $this->sendError("page.not.found");
@@ -187,7 +175,24 @@ class DocumentController extends BaseController
     }
 
     /**
-     * @Route("/delete", name="api_document_delete", methods={"GET"})
+     * @Route("/edit-mode", name="corepulse_api_document_edit_mode", methods={"GET"})
+     */
+    public function editModeAction(EditmodeEditableDefinitionCollector $definitionCollector, DocumentRenderer $documentRenderer)
+    {
+        $document = Document::getById((int) $this->request->get('id'));
+        // $res = $this->renderView($document->getTemplate(), ['editmode' => true, 'document' => $document]);
+        // dd($document, $definitionCollector->getDefinitions());
+        if ($document->getTemplate()) {
+            return $this->render($document->getTemplate(), [
+                'editmode' => true
+            ]);
+        } else {
+            return $this->forward($document->getController());
+        }
+    }
+
+    /**
+     * @Route("/delete", name="corepulse_api_document_delete", methods={"GET"})
      *
      * {mô tả api}
      *
@@ -197,16 +202,16 @@ class DocumentController extends BaseController
      *
      * @throws \Exception
      */
-    public function deleteAction( Request $request ): JsonResponse {
+    public function delete(): JsonResponse {
         try {
             $condition = [
                 'id' => 'required',
             ];
 
-            $errorMessages = $this->validator->validate($condition, $request);
+            $errorMessages = $this->validator->validate($condition, $this->request);
             if ($errorMessages) return $this->sendError($errorMessages);
 
-            $ids = $request->get('id');
+            $ids = $this->request->get('id');
             if (is_array($ids)) {
                 foreach ($ids as $id) {
                     $document = Document::getById((int) $id);
@@ -233,7 +238,7 @@ class DocumentController extends BaseController
     }
 
     /**
-     * @Route("/add", name="api_document_add", methods={"GET"})
+     * @Route("/add", name="corepulse_api_document_add", methods={"GET"})
      *
      * {mô tả api}
      *
@@ -243,28 +248,29 @@ class DocumentController extends BaseController
      *
      * @throws \Exception
      */
-    public function addAction( Request $request ): JsonResponse {
+    public function add(): JsonResponse {
         try {
             $condition = [
                 'title' => 'required',
                 'type' => '',
                 'key' => 'required',
-                'folderId' => '',
+                'parentId' => 'numeric',
             ];
 
-            $errorMessages = $this->validator->validate($condition, $request);
+            $errorMessages = $this->validator->validate($condition, $this->request);
             if ($errorMessages) return $this->sendError($errorMessages);
 
-            $title = $request->get('title');
-            $folderId = $request->get('folderId');
-            $parentId = $folderId  ? (int)$folderId : 1;
+            $title = $this->request->get('title');
+            $parentId = (int)$this->request->get('parentId', 1);
+            if (empty($parentId)) $parentId = 1;
 
-            $type = $request->get('type');
-            $key = $request->get('key');
+            $type = $this->request->get('type');
+            $key = $this->request->get('key');
 
+            $parent = Document::getById($parentId);
             $key = trim($key);
             if ($title) {
-                $checkPage = Document::getByPath("/" . $title);
+                $checkPage = Document::getByPath($parent->getFullPath() . $title);
                 if (!$checkPage) {
                     $page = DocumentServices::createDoc($key, $title, $type, $parentId);
                     if ($page){
@@ -277,17 +283,14 @@ class DocumentController extends BaseController
                     return $this->sendError('Page "' . $title . '" already exists');
                 }
             }
-
         } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
     // trả ra dữ liệu
     public function listingResponse($item)
     {
-        $json = [];
-        $publicURL = DocumentServices::getThumbnailPath($item);
 
         $draft = $this->checkLastest($item);
         if ($draft) {
@@ -300,31 +303,19 @@ class DocumentController extends BaseController
             }
         }
 
-        $listChills = new \Pimcore\Model\Document\Listing();
-        $listChills->setCondition("parentId = :parentId", ['parentId' => $item->getId()]);
-        $chills = [];
-        foreach ($listChills as $chill) {
-            $chills[] = $chill;
-        }
+        $data = [
+            'id' => $item->getId(),
+            'key' => $item->getId() == 1 ? 'Home' : $item->getKey(),
+            'type' => $item->getType(),
+            'published' => $status,
+            'createDate' => $this->getTimeAgo($item->getCreationDate()),
+            'modificationDate' => $this->getTimeAgo($item->getModificationDate()),
+            'parent' => (boolean)DocumentServices::isParent($item->getId()),
+            'index' => $item->getIndex(),
+        ];
 
-        $checkName = strpos($item->getKey(), 'email');
-        if ($checkName === false && $item->getType() != "email") {
-            $json = [
-                'id' => $item->getId(),
-                'key' =>  $item->getId() == 1 ? 'Home' : $item->getKey(),
-                'image' => $publicURL,
-                'type' => $item->getType(),
-                'published' => $status,
-                'createDate' => DocumentServices::getTimeAgo($item->getCreationDate()),
-                'modificationDate' => DocumentServices::getTimeAgo($item->getModificationDate()),
-                'parent' => $chills ? true : false,
-                'index' => $item->getId() == 1 ? 0 : $item->getIndex(),
-            ];
-        }
-
-        return $json;
+        return $data;
     }
-
 
     // trả ra dữ liệu
     public function detailResponse($document)

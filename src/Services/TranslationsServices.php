@@ -3,16 +3,18 @@
 namespace CorepulseBundle\Services;
 
 use Pimcore\Db;
+use Pimcore\Tool;
 
 class TranslationsServices
 {
-    static public function create($data, $key)
+    static public function create($key)
     {
-        foreach ($data->languages as $lang => $text) {
+        $result = null;
+        foreach (Tool::getValidLanguages() as $language) {
             $queryBuilder = Db::getConnection()->createQueryBuilder();
             $queryBuilder
                 ->insert('translations_messages')
-                ->setValue('`type`', 'type')
+                ->setValue('`type`', ':type')
                 ->setValue('`key`', ':key')
                 ->setValue('`text`', ':text')
                 ->setValue('`language`', ':language')
@@ -22,8 +24,8 @@ class TranslationsServices
                 ->setValue('`userModification`', ':userModification')
                 ->setParameter('type', 'simple')
                 ->setParameter('key', $key)
-                ->setParameter('text', $text)
-                ->setParameter('language', $lang)
+                ->setParameter('text', ' ')
+                ->setParameter('language', $language)
                 ->setParameter('creationDate', time())
                 ->setParameter('modificationDate', time())
                 ->setParameter('userOwner', 0)
@@ -31,13 +33,17 @@ class TranslationsServices
 
             $result = $queryBuilder->execute();
         }
+
         return $result;
     }
 
-    static public function edit($data, $key)
+    static public function update($params)
     {
-        unset($data->id);
-        foreach ($data as $lang => $text) {
+        $result = [];
+        $key = $params['key'];
+        unset($params['key']);
+
+        foreach ($params as $lang => $text) {
             $queryBuilder = Db::getConnection()->createQueryBuilder();
             $queryBuilder
                 ->update('translations_messages')
@@ -48,8 +54,9 @@ class TranslationsServices
                 ->setParameter('key', $key)
                 ->setParameter('language', $lang);
 
-            $result = $queryBuilder->execute();
+            $result[] = $queryBuilder->execute();
         }
+
         return $result;
     }
 
@@ -75,5 +82,17 @@ class TranslationsServices
         return $result;
     }
 
-    static public function 
+    // Trả ra dữ liệu
+    static public function getData($item)
+    {
+        $data = array_merge(['key' => $item->getKey()], $item->getTranslations());
+
+        foreach (Tool::getValidLanguages() as $language) {
+            if (!isset($data[$language])) {
+                $data[$language] = '';
+            }
+        }
+
+        return $data;
+    }
 }

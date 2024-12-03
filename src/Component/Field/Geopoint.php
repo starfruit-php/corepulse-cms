@@ -28,6 +28,11 @@ class Geopoint extends AbstractField
         return null;
     }
 
+    public function formatDocumentSave($value)
+    {
+        return $value;
+    }
+
     public function formatDataSave($value)
     {
         if (is_array($value)) {

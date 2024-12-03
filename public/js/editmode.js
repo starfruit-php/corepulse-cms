@@ -1,11 +1,98 @@
 var divElement;
 var placeholderDefault = 'Enter Here...';
 
-editableDefinitions.forEach(function (element) {
+var editableHtmlEls = {};
+document.querySelectorAll('.pimcore_editable').forEach(editableEl => {
+    if(editableHtmlEls[editableEl.id] && editableEl.dataset.name) {
+        let message = "Duplicate editable name: " + editableEl.dataset.name;
+        
+        window.parent.postMessage(
+          { id: 'error', action: 'error', data: message},
+          'http://localhost:3002'
+        );
+        throw message;
+    }
+    editableHtmlEls[editableEl.id] = true;
+});
 
+document.addEventListener('click', function (event) {
+  event.preventDefault;
+  let targetId = event.target.id;
+  let data = event.target.getAttribute('data-corepulse');
+
+  if (!targetId) {
+    const closestElementWithId = event.target.closest('[id]');
+    if (closestElementWithId) {
+      targetId = closestElementWithId.id;
+      data = closestElementWithId.getAttribute('data-corepulse');
+    }
+  }
+
+  if (targetId) {
+    window.parent.postMessage(
+      { id: targetId, action: 'openModal', data: JSON.parse(data)},
+      'http://localhost:3002'
+    );
+  }
+});
+
+window.addEventListener('message', (event) => {
+  // if (event.origin !== 'https://parent-domain.com') return;
+
+  const data = event.data;
+  if (data.action === 'update') {
+    updateIframeContent(data.id, data.value);
+  }
+});
+
+function updateIframeContent(id, value) {
+  var updateElement = document.getElementById(id);
+
+  if(updateElement) {
+    const keys = Object.keys(value);
+
+    if (keys.length > 0) {
+      const type = updateElement.getAttribute('data-type');
+      renderItem(updateElement, type, value[keys[0]]);
+    }
+  }
+}
+
+function renderItem(updateElement, type, value) {
+  if (type == 'checkbox') {
+    const element = updateElement.querySelector('input[type="checkbox"]');
+    if (element) {
+      element.checked = value;
+    }
+  } else if (type == 'image') {
+    let image = document.createElement("img");
+
+    if (value && value[0]) {
+      image.height = '150';
+      image.src = value[0]['fullPath'];
+      image.dataset.id = value[0]['id'];
+      image.dataset.type = value[0]['type'];
+      image.dataset.src = value[0]['fullPath'];
+    }
+    
+    updateElement.innerHTML = '';
+    updateElement.appendChild(image);
+  } else { 
+    updateElement.innerHTML = value;
+  }
+}
+
+//lấy giá trị config
+window.parent.postMessage(
+  { id: 'initConfig', action: 'initConfig', data: {config: editableDefinitions, dataDocument: dataDocument}},
+  'http://localhost:3002'
+);
+
+// hiển thị giá trị ban đầu
+editableDefinitions.forEach(function (element) {
   // Truy cập đến phần tử div có name='abc'
   divElement = document.getElementById(element.id);
-
+  
   if (element.type == 'input') {
     // Thêm lớp cho div
     if ( divElement) {
@@ -370,9 +457,10 @@ editableDefinitions.forEach(function (element) {
       var image = document.createElement("img");
 
       image.src = dataDocument[element.name]['thumbPath'];
-      if (element.config.height) {
-        image.height = element.config.height;
-      }
+      // if (element.config.height) {
+      //   image.height = element.config.height;
+      // }
+      image.height = 150;
       image.dataset.id = dataDocument[element.name]['id'];
       image.dataset.type = dataDocument[element.name]['type'];
       image.dataset.subtype = dataDocument[element.name]['subtype'];
@@ -433,7 +521,6 @@ editableDefinitions.forEach(function (element) {
 
       video.append(source);
     }
-    
     // divElement.append(video);
   }
 
@@ -479,4 +566,9 @@ editableDefinitions.forEach(function (element) {
     divElement.innerHTML = 'Scheduled In Here';
   }
 
+  if (element.name in dataDocument) {
+    element.convertData = dataDocument[element.name];
+  }
+  
+  divElement.setAttribute('data-corepulse', JSON.stringify(element));
 });

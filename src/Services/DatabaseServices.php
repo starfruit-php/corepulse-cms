@@ -13,6 +13,7 @@ class DatabaseServices
     const COREPULSE_CLASS_TABLE = 'corepulse_class';
     const COREPULSE_TRANSLATION_TABLE = 'corepulse_translations';
     const COREPULSE_USER_TABLE = 'corepulse_users';
+    const COREPULSE_SEARCH_HISTORY = 'corepulse_search_history';
 
     public static function createTables()
     {
@@ -22,6 +23,7 @@ class DatabaseServices
         self::createCorepulseClass();
         self::createCorepulseTranslation();
         self::initUserDefault();
+        self::createCorepulseSearchHistory();
     }
 
     public static function initUserDefault()
@@ -180,6 +182,22 @@ class DatabaseServices
             `modifictionDate` timestamp DEFAULT current_timestamp() ON UPDATE current_timestamp(),
             PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        COMMIT;";
+
+        Db::get()->executeQuery($query);
+    }
+
+    public static function createCorepulseSearchHistory()
+    {
+        $query = " CREATE TABLE IF NOT EXISTS " . self::COREPULSE_SEARCH_HISTORY . " (
+            `id` int(11) NOT NULL AUTO_INCREMENT,
+            `userId` int(11) NOT NULL,
+            `data` longtext DEFAULT NULL,
+            `createAt` timestamp NULL DEFAULT current_timestamp(),
+            `updateAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `userId` (`userId`)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         COMMIT;";
 
         Db::get()->executeQuery($query);

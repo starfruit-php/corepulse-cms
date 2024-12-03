@@ -32,6 +32,11 @@ class Date extends AbstractField
         return null;
     }
 
+    public function formatDocumentSave($value)
+    {
+        return $value;
+    }
+
     public function getFrontEndType()
     {
         return 'date';

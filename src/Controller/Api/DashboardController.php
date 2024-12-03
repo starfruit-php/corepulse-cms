@@ -71,6 +71,7 @@ class DashboardController extends BaseController
 
                 $listing[] = [
                     'id' => $item->getCid(),
+                    'subId' => $item->getId(),
                     'name' => $objectDetail?->getKey(),
                     'type' => $objectDetail?->getClassName(),
                     'class' => $objectDetail?->getClassId(),

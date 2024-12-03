@@ -20,6 +20,11 @@ class Select extends AbstractField
     {
         return $value;
     }
+    
+    public function formatDocumentSave($value)
+    {
+        return $value;
+    }
 
     public function formatDataSave($value)
     {

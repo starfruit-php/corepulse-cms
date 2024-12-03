@@ -205,7 +205,8 @@ class ManyToOneRelation extends Select
                         'key' => $key,
                         'value' => $item->getId(),
                         'type' => $model,
-                        'label' => $item->getFullPath(),
+                        'label' => $key,
+                        // 'label' => $item->getFullPath(),
                     ];
                 }
             }

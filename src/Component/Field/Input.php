@@ -4,6 +4,7 @@ namespace CorepulseBundle\Component\Field;
 
 use CorepulseBundle\Component\Field\FieldInterface;
 use Pimcore\Model\DataObject\Data\BlockElement;
+use Pimcore\Model\Document\Editable\Input as DocumentInput;
 
 class Input extends AbstractField
 {
@@ -25,6 +26,16 @@ class Input extends AbstractField
     public function formatDataSave($value)
     {
         return $value;
+    }
+
+    public function formatDocumentSave($value)
+    {
+        $editable = new DocumentInput();
+        $editable->setDocument($this->getObjectOrDocument());
+        $editable->setName($this->getLayout()->name);
+        $editable->setDataFromResource($value ? $value : '');
+       
+        return $editable;
     }
 
     public function getFrontEndType()

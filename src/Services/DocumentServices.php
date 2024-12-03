@@ -3,11 +3,7 @@
 namespace CorepulseBundle\Services;
 
 use CorepulseBundle\Controller\Cms\FieldController;
-use Google\Service\AIPlatformNotebooks\Status;
 use Pimcore\Db;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use Symfony\Component\HttpFoundation\Response;
 use DateTime;
 use Pimcore\Model\Document;
 use Pimcore\Model\Asset;
@@ -18,6 +14,31 @@ class DocumentServices
     const KEY_DOCUMENT = 'Document';
     const KEY_OBJECT = 'DataObject';
     const KEY_ASSET = 'Asset';
+
+    public static function isParent($id)
+    {
+        $select = Db::get()->fetchAssociative('SELECT count(*) FROM `documents` WHERE `parentId` = ?', [$id]);
+
+        return reset($select);
+    }
+
+    static public function processField($document, $param) 
+    {
+        $fieldType = $param['type'];
+        $getClass = '\\CorepulseBundle\\Component\\Field\\' . ucfirst($fieldType);
+
+        try {
+            if (class_exists($getClass)) {
+                $component = new $getClass($document, $param, $param['data'], null, false);
+                $document->setEditable($component->getDataSave());
+            }
+        
+            return $document;
+        } catch (\Throwable $th) {
+            $param['error'] = $th->getMessage();
+            return $param;
+        }
+    }
 
     public static function createDoc($key, $title, $type, $parentId)
     {
@@ -55,7 +76,7 @@ class DocumentServices
     }
 
     public static function getListClass($type, $request)
-    { 
+    {
         $search = $request->get('search');
 
         $conditionQuery = "id != 1 AND type != 'folder'";
@@ -70,16 +91,14 @@ class DocumentServices
             $documentListing = new \Pimcore\Model\Document\Listing();
             $documentListing->setCondition($conditionQuery, $conditionParams);
             foreach ($documentListing as $doc) {
-                    $linkImg = self::getThumbnailPath($doc);
                     $listClass[] = [
                         'id' => $doc->getId(),
                         'name' => $doc->getKey(),
                         'subtype' => $doc->getType(),
                         'type' => 'document',
-                        'fullPath' => $linkImg,
                     ];
             }
-        } 
+        }
         if ($type == "asset") {
             if ($search) {
                 $conditionQuery .= ' AND filename LIKE :search';
@@ -88,16 +107,14 @@ class DocumentServices
             $assetListing = new \Pimcore\Model\Asset\Listing();
             $assetListing->setCondition($conditionQuery, $conditionParams);
             foreach ($assetListing as $asset) {
-                $linkImg = AssetServices::getThumbnailPath($asset);
                 $listClass[] = [
                     'id' => $asset->getId(),
                     'name' => $asset->getKey(),
                     'subtype' => $asset->getType(),
                     'type' => 'asset',
-                    'fullPath' => $linkImg,
                 ];
             }
-        } 
+        }
         if ($type == "object") {
             if ($search) {
                 $conditionQuery .= ' AND `key` LIKE :search';
@@ -112,7 +129,6 @@ class DocumentServices
                     'subtype' => $object->getType(),
                     'type' => 'object',
                     'class' => ($object->getType() != 'folder') ? $object?->getClass()->getName() : '',
-                    'fullPath' => "/bundles/pimcoreadmin/img/flat-color-icons/object.svg",
                 ];
             }
         }
@@ -128,16 +144,14 @@ class DocumentServices
             $documentListing = new \Pimcore\Model\Document\Listing();
             $documentListing->setCondition($conditionQuery, $conditionParams);
             foreach ($documentListing as $doc) {
-                    $linkImg = self::getThumbnailPath($doc);
                     $listClass[] = [
                         'id' => $doc->getId(),
                         'name' => $doc->getKey(),
                         'subtype' => $doc->getType(),
                         'type' => 'document',
-                        'fullPath' => $linkImg,
                     ];
             }
-        } 
+        }
 
         return $listClass;
     }
@@ -156,59 +170,7 @@ class DocumentServices
         return $data;
     }
 
-    public static function getThumbnailPath($doc)
-    {
-        if ($doc->getType() == "folder") {
-            $publicURL = '/bundles/pimcoreadmin/img/flat-color-icons/folder.svg';
-        } elseif ($doc->getType() == "page" && ($doc->getId() != 1)) {
-            $publicURL = '/bundles/pimcoreadmin/img/flat-color-icons/page.svg';
-        } elseif ($doc->getType() == "link") {
-            $publicURL = '/bundles/pimcoreadmin/img/flat-color-icons/link.svg';
-        } elseif ($doc->getType() == "snippet") {
-            $publicURL = '/bundles/pimcoreadmin/img/flat-color-icons/snippet.svg';
-        } elseif ($doc->getType() == "email") {
-            $publicURL = '/bundles/pimcoreadmin/img/flat-color-icons/email.svg';
-        } elseif ($doc->getType() == "hardlink") {
-            $publicURL = '/bundles/pimcoreadmin/img/flat-color-icons/hardlink.svg';
-        } elseif ($doc->getType() == "printpage") {
-            $publicURL = '/bundles/pimcoreadmin/img/flat-color-icons/print.svg';
-        } elseif ($doc->getType() == "printcontainer") {
-            $publicURL = '/bundles/pimcoreadmin/img/flat-color-icons/book.svg';
-        } elseif ($doc->getId() == 1) {
-            $publicURL = '/bundles/pimcoreadmin/img/flat-color-icons/home-gray.svg';
-        } else {
-            $publicURL = '';
-        }
-
-        return $publicURL;
-    }
-
-    public static function getTimeAgo($timestamp)
-    {
-        // Create DateTime objects for the current time and the given timestamp
-        $currentDateTime = new DateTime();
-        $timestampDateTime = new DateTime("@$timestamp");
-
-        // Calculate the difference between the current time and the given timestamp
-        $interval = $currentDateTime->diff($timestampDateTime);
-
-        // Format the result based on the difference
-        if ($interval->y > 0) {
-            return $interval->y . " year" . ($interval->y > 1 ? "s" : "") . " ago";
-        } elseif ($interval->m > 0) {
-            return $interval->m . " month" . ($interval->m > 1 ? "s" : "") . " ago";
-        } elseif ($interval->d > 0) {
-            return $interval->d . " day" . ($interval->d > 1 ? "s" : "") . " ago";
-        } elseif ($interval->h > 0) {
-            return $interval->h . " hour" . ($interval->h > 1 ? "s" : "") . " ago";
-        } elseif ($interval->i > 0) {
-            return $interval->i . " minute" . ($interval->i > 1 ? "s" : "") . " ago";
-        } else {
-            return "just now";
-        }
-    }
-
-    static public function getJson($document)
+    static public function getSidebar($document)
     {
         $userOwner =  AdminUser::getById($document->getUserOwner());
         $userModification = AdminUser::getById($document->getUserModification());
@@ -246,7 +208,7 @@ class DocumentServices
 
         return $filteredValues;
     }
-    
+
     // lấy danh sách name các field xuất hiện trong block được user set
     public static function getEditableBlock($document, $nameBlock) {
         $filteredArray = self::filterArray($document->getEditables(), $nameBlock);
@@ -292,7 +254,7 @@ class DocumentServices
                 if ($document->getEditable($keyBlockT)?->getData()) {
                     $contentField = $document->getEditable($keyBlockT)?->getData();
                 } else {
-                    $contentField = [ 
+                    $contentField = [
                         "internalType" => "",
                         "linktype" => "",
                         "text" => "",
@@ -323,14 +285,12 @@ class DocumentServices
             if ($type == 'snippet') {
                 $idSnippet = $document->getEditable($keyBlockT)?->getId();
                 $snippeted = Document::getById((int)$idSnippet);
-                $fullPath = DocumentServices::getThumbnailPath($snippeted);
 
                 $contentField = [
                     'id' => $snippeted->getId(),
                     'name' => $snippeted->getKey(),
                     'subtype' => $snippeted->getType(),
                     'type' => 'documment',
-                    'fullPath' => $fullPath,
                 ];
             }
 
@@ -338,7 +298,7 @@ class DocumentServices
                 $contentField = $document->getEditable($keyBlockT)?->getData();
             }
 
-            $list[$keyBlockT] = 
+            $list[$keyBlockT] =
             [
                 'type' => $type,
                 'value' => $contentField
@@ -361,28 +321,28 @@ class DocumentServices
                     'document' => [],
                     'asset' => [],
                 ];
-            } 
- 
+            }
+
             foreach ($arrTypes as $key => $value) {
                 if ($key == 'object') {
                     $classes = $value;
                     $blackList = ["user", "role"];
                     $listObject = FieldController::getClassList($blackList);
-    
+
                     $options[] = FieldController::getRelationType($classes, self::KEY_OBJECT, 'classes', $listObject);
                 }
-    
+
                 if ($key == 'document') {
                     $document = $value;
                     $listDocument = ['email', 'link', 'hardlink', 'snippet', 'folder', 'page'];
-    
+
                     $options[] = FieldController::getRelationType($document, self::KEY_DOCUMENT, 'documentTypes', $listDocument);
                 }
-    
+
                 if ($key == 'asset') {
                     $asset = $value;
                     $listAsset = ['archive', 'image', 'audio', 'document', 'text', 'folder', 'video', 'unknown'];
-    
+
                     $options[] = FieldController::getRelationType($asset, self::KEY_ASSET, 'assetTypes', $listAsset);
                 }
             }
@@ -445,7 +405,7 @@ class DocumentServices
                         'type' => strtolower($v->value[0]) == "dataobject" ? 'object' : strtolower($v->value[0]),
                         'subtype' => $v->value[1],
                     ];
-                } 
+                }
                 // else {
                 //     $dataSave = [
                 //         'id' => (int) $v->value->id,
@@ -484,7 +444,7 @@ class DocumentServices
                 if (substr($path, 0, 4) == "http") {
                     $prefix = \Pimcore::getContainer()->getParameter('pimcore.config')['assets']['frontend_prefixes']['source'];
                     if ($prefix) {
-                        $path = substr($path, strlen($prefix)); 
+                        $path = substr($path, strlen($prefix));
                     }
                 }
                 $asset = Asset::getByPath($path);
@@ -492,9 +452,9 @@ class DocumentServices
                     $idImage = $blockSave?->setId($asset->getId());
                 }
             }
-        } 
-        
-        if (!in_array($v->type, $notSave)) { 
+        }
+
+        if (!in_array($v->type, $notSave)) {
             $blockSave?->setDataFromResource($v->value);
         }
 

@@ -19,7 +19,7 @@ use CorepulseBundle\Security\Token;
 class UserAuthenticator extends AbstractAuthenticator
 {
     const TOKEN_HEADER_NAME = 'CMS-TOKEN';
-
+    const EDITMODE_ROUTE = 'corepulse_api_document_edit_mode';
     /**
      * Called on every request to decide if this authenticator should be
      * used for the request. Returning `false` will cause this authenticator
@@ -27,12 +27,15 @@ class UserAuthenticator extends AbstractAuthenticator
      */
     public function supports(Request $request): ?bool
     {
+        //page editmode
+        if ($request->attributes->get('_route') === self::EDITMODE_ROUTE) return true;
+
         return $request->headers->has(self::TOKEN_HEADER_NAME);
     }
 
     public function authenticate(Request $request): Passport
     {
-        $apiToken = $request->headers->get(self::TOKEN_HEADER_NAME);
+        $apiToken = $request->attributes->get('_route') === self::EDITMODE_ROUTE ? $request->query->get(self::TOKEN_HEADER_NAME) : $request->headers->get(self::TOKEN_HEADER_NAME);
         if (null === $apiToken) {
             // The token header was empty, authentication fails with HTTP Status
             // Code 401 "Unauthorized"

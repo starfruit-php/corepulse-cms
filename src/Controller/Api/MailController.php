@@ -155,7 +155,6 @@ class MailController extends BaseController
     public function listingResponse($item)
     {
         $json = [];
-        $publicURL = DocumentServices::getThumbnailPath($item);
 
         $draft = $this->checkLastest($item);
         if ($draft) {
@@ -179,11 +178,11 @@ class MailController extends BaseController
         if ($checkName === false) {
             $json[] = [
                 'id' => $item->getId(),
-                'name' => "<div class='tableCell--titleThumbnail d-flex align-center'><img class='me-2' src=' " .  $publicURL . "'><span>" . $item->getKey() . "</span></div>",
-                'type' => '<div class="chip">' . $item->getType() . '</div>',
+                'name' => $item->getKey(),
+                'type' => $item->getType(),
                 'status' => $status,
-                'createDate' => DocumentServices::getTimeAgo($item->getCreationDate()),
-                'modificationDate' => DocumentServices::getTimeAgo($item->getModificationDate()),
+                'createDate' => $this->getTimeAgo($item->getCreationDate()),
+                'modificationDate' => $this->getTimeAgo($item->getModificationDate()),
                 'parent' => $chills ? true : false,
                 'noMultiEdit' => [
                     'name' => $chills ? [] : ['name'],

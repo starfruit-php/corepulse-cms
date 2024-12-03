@@ -49,14 +49,18 @@ class ObjectHelper
 
     static public function getLastest($object)
     {
-        $versions = $object->getVersions();
+        try {
+            $versions = $object->getVersions();
 
-        if (empty($versions)) {
+            if (empty($versions)) {
+                return $object;
+            }
+    
+            $previousVersion = $versions[count($versions) - 1];
+            $previousObject = $previousVersion->getData();
+            return $previousObject;
+        } catch (\Throwable $th) {
             return $object;
         }
-
-        $previousVersion = $versions[count($versions) - 1];
-        $previousObject = $previousVersion->getData();
-        return $previousObject;
     }
 }

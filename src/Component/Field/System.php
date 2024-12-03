@@ -15,7 +15,7 @@ class System extends Input
         }
 
         if ($this->layout->subtype == 'published') {
-            return ObjectHelper::getPublished($this->getObject());
+            return ObjectHelper::getPublished($this->getObjectOrDocument());
         }
 
         return $value;

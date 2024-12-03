@@ -51,6 +51,11 @@ class Localizedfields extends AbstractField
         return null;
     }
 
+    public function formatDocumentSave($value)
+    {
+        return $value;
+    }
+
     public function getDataSave() {
         $data = null;
         if ($this->getLocalized()) {
@@ -68,7 +73,7 @@ class Localizedfields extends AbstractField
         $children = $this->layout->children;
         if (!empty($children)) {
             foreach ($children as $key => $value) {
-                $layout = ClassServices::getFieldProperty($value, $this->getLocalized(), $this->getObject()?->getClassId());
+                $layout = ClassServices::getFieldProperty($value, $this->getLocalized(), $this->getObjectOrDocument()?->getClassId());
                 if(in_array( $layout['fieldtype'], ClassServices::TYPE_OPTION)) {
                     $this->optionKey[$layout['name']] = [
                         'fieldId' => $layout['name'],

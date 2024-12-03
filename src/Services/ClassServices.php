@@ -170,12 +170,12 @@ class ClassServices
 
     public static function getConfig($className)
     {
-        $item = Db::get()->fetchAssociative('SELECT * FROM `corepulse_class` WHERE `className` = "' . $className . '"', []);
+        $item = Db::get()->fetchAssociative('SELECT * FROM `corepulse_class` WHERE `className` = ?', [$className]);
         if (!$item) {
             Db::get()->insert('corepulse_class', [
                 'className' => $className,
             ]);
-            $item = Db::get()->fetchAssociative('SELECT * FROM `corepulse_class` WHERE `className` = "' . $className . '"', []);
+            $item = Db::get()->fetchAssociative('SELECT * FROM `corepulse_class` WHERE `className` = ?', [$className]);
         }
 
         return $item;

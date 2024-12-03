@@ -65,7 +65,8 @@ class BaseController extends FrontendController
         $result = [];
 
         if ($message) {
-            $result['message'] = $this->translator->trans($message);
+            // $result['message'] = $this->translator->trans($message);
+            $result['message'] = $message;
         }
 
         $result['data'] = $data;
@@ -91,7 +92,8 @@ class BaseController extends FrontendController
                 $error = ["errors" => $error];
             }
             if (is_string($error)) {
-                $error = ["error" => ["message" => $this->translator->trans($error)]];
+                // $error = ["error" => ["message" => $this->translator->trans($error)]];
+                $error = ["error" => ["message" => $error]];
             }
         }
 
@@ -153,15 +155,19 @@ class BaseController extends FrontendController
 
     public function getLastest($object)
     {
-        $versions = $object->getVersions();
+        try {
+            $versions = $object->getVersions();
 
-        if (empty($versions)) {
+            if (empty($versions)) {
+                return $object;
+            }
+
+            $previousVersion = $versions[count($versions) - 1];
+            $previousObject = $previousVersion->getData();
+            return $previousObject;
+        } catch (\Throwable $th) {
             return $object;
         }
-
-        $previousVersion = $versions[count($versions) - 1];
-        $previousObject = $previousVersion->getData();
-        return $previousObject;
     }
 
     public function getTimeAgo($timestamp)
@@ -219,26 +225,26 @@ class BaseController extends FrontendController
                         switch ($v['condition']) {
                             case 'equal':
                             case 'alike':
-                                $conditionQuery[] = " $k = :$k ";
+                                $conditionQuery[] = " `$k` = :$k ";
                                 break;
                             case 'biggerThan':
                             case 'after':
-                                $conditionQuery[] = " $k > :$k ";
+                                $conditionQuery[] = " `$k` > :$k ";
                                 break;
                             case 'smallerThan':
                             case 'before':
-                                $conditionQuery[] = " $k < :$k ";
+                                $conditionQuery[] = " `$k` < :$k ";
                                 break;
                             case 'includes':
-                                $conditionQuery[] = " LOWER($k) LIKE LOWER(:$k) ";
+                                $conditionQuery[] = " LOWER(`$k`) LIKE LOWER(:$k) ";
                                 $v['value'] = "%" . $v['value'] . "%";
                                 break;
                             case 'notIncludes':
-                                $conditionQuery[] = " LOWER($k) NOT LIKE LOWER(:$k) ";
+                                $conditionQuery[] = " LOWER(`$k`) NOT LIKE LOWER(:$k) ";
                                 $v['value'] = "%" . $v['value'] . "%";
                                 break;
                             case 'notAlike':
-                                $conditionQuery[] = " $k != :$k ";
+                                $conditionQuery[] = " `$k` != :$k ";
                                 break;
                         }
 

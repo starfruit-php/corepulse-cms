@@ -27,12 +27,13 @@ class Installer extends SettingsStoreAwareInstaller
     private array $tablesToInstall = [
         'corepulse_settings' => 'CREATE TABLE `corepulse_settings` (
             `id` int(11) NOT NULL AUTO_INCREMENT,
-            `type` varchar(50) DEFAULT NULL,
+            `type` varchar(50) NOT NULL,
             `config` longtext DEFAULT NULL,
             `createAt` timestamp NULL DEFAULT current_timestamp(),
             `updateAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-            PRIMARY KEY (`id`)
-            ) DEFAULT CHARSET=utf8mb4;',
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `type` (`type`)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;',
         'corepulse_users' => 'CREATE TABLE `corepulse_users` (
             `id` int(11) NOT NULL AUTO_INCREMENT,
             `username` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -52,13 +53,13 @@ class Installer extends SettingsStoreAwareInstaller
             UNIQUE KEY `username` (`username`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;',
         'corepulse_role' => 'CREATE TABLE `corepulse_role` (
-                `id` int(11) NOT NULL AUTO_INCREMENT,
-                `name` varchar(190) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-                `permission` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-                `createAt` timestamp NULL DEFAULT current_timestamp(),
-                `updateAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-                PRIMARY KEY (`id`)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;',
+            `id` int(11) NOT NULL AUTO_INCREMENT,
+            `name` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL,
+            `permission` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+            `createAt` timestamp NULL DEFAULT current_timestamp(),
+            `updateAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+            PRIMARY KEY (`id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;',
         'corepulse_plausible' => 'CREATE TABLE `corepulse_plausible` (
             `id` int(11) NOT NULL AUTO_INCREMENT,
             `domain` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -114,8 +115,25 @@ class Installer extends SettingsStoreAwareInstaller
             `text` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
             `creationDate` timestamp DEFAULT current_timestamp(),
             `modifictionDate` timestamp DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-            PRIMARY KEY (`id`)
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `key` (`key`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;',
+        'corepulse_class' => 'CREATE TABLE `corepulse_class` (
+            `id` int(11) NOT NULL AUTO_INCREMENT,
+            `className` varchar(255) NOT NULL,
+            `visibleFields` LONGTEXT  DEFAULT NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `className` (`className`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;',
+        'corepulse_search_history' => 'CREATE TABLE `corepulse_search_history` (
+            `id` int(11) NOT NULL AUTO_INCREMENT,
+            `userId` int(11) NOT NULL,
+            `data` longtext DEFAULT NULL,
+            `createAt` timestamp NULL DEFAULT current_timestamp(),
+            `updateAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `userId` (`userId`)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;',
     ];
 
 

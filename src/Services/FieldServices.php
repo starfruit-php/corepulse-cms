@@ -620,15 +620,11 @@ class FieldServices
         $data = [];
     
         if ($value->getSnippet() != null) {
-            $snippeted = Document::getById((int)$value->getSnippet()->getId());
-            $fullPath = DocumentServices::getThumbnailPath($snippeted);
-
             $data = [
                 'id' => $value->getSnippet()->getId(),
                 'name' => $value->getSnippet()->getKey(),
                 'subtype' => $value->getSnippet()->getType(),
                 'type' => 'documment',
-                'fullPath' => $fullPath,
             ];
         }
         return $data;

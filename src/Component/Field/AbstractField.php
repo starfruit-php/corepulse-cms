@@ -7,28 +7,41 @@ use Pimcore\Model\DataObject\Data\BlockElement;
 
 abstract class AbstractField implements FieldInterface
 {
-    protected $object;
+    protected $objectOrDocument;
     protected $layout;
     protected $dataValue;
     protected $localized;
 
-    public function __construct($object, $layout = null, $dataValue = null, $localized = null)
+    protected $isObject;
+
+    public function __construct($objectOrDocument, $layout = null, $dataValue = null, $localized = null, $isObject = true)
     {
         $this->setLayout($layout);
-        $this->setObject($object);
+        $this->setObjectOrDocument($objectOrDocument);
         $this->setDataValue($dataValue);
         $this->setLocalized($localized);
+        $this->setIsObject($isObject);
     }
 
     // Getter and Setter methods
-    public function getObject()
+    public function getObjectOrDocument()
     {
-        return $this->object;
+        return $this->objectOrDocument;
     }
 
-    public function setObject($object)
+    public function setObjectOrDocument($objectOrDocument)
     {
-        $this->object = $object;
+        $this->objectOrDocument = $objectOrDocument;
+    }
+
+    public function getIsObject()
+    {
+        return $this->isObject;
+    }
+
+    public function setIsObject($isObject)
+    {
+        $this->isObject = $isObject;
     }
 
     public function getLayout()
@@ -68,12 +81,12 @@ abstract class AbstractField implements FieldInterface
     //default method
     public function getName()
     {
-        return $this->getLayout()?->name ?? $this->getObject()?->getName();
+        return $this->getLayout()?->name ?? $this->getObjectOrDocument()?->getName();
     }
 
     public function getTitle()
     {
-        return $this->getLayout()?->title ?? $this->getObject()?->getTitle();
+        return $this->getLayout()?->title ?? $this->getObjectOrDocument()?->getTitle();
     }
 
     public function getInvisible()
@@ -83,26 +96,32 @@ abstract class AbstractField implements FieldInterface
 
     public function getDataSave()
     {
+        if (!$this->getIsObject()) {
+            return $this->formatDocumentSave($this->getDataValue());
+        }
+
         return $this->formatDataSave($this->getDataValue());
     }
 
     public function getValue()
     {
-        if (!$this->layout) {
-            return $this->formatDocument($this->getObject()->getData());
+        if (!$this->getIsObject()) {
+            return $this->formatDocument($this->getObjectOrDocument()->getData());
         }
     
-        if ($this->getObject() instanceof BlockElement) {
-            return $this->formatBlock($this->getObject()->getData());
+        if ($this->getObjectOrDocument() instanceof BlockElement) {
+            return $this->formatBlock($this->getObjectOrDocument()->getData());
         }
     
         $method = 'get' . ucfirst($this->getName());
-        $value = $this->getLocalized() ? $this->getObject()->$method($this->getLocalized()) : $this->getObject()->$method();
+        $value = $this->getLocalized() ? $this->getObjectOrDocument()->$method($this->getLocalized()) : $this->getObjectOrDocument()->$method();
     
         return $this->format($value);
     }
 
     // override method
+    abstract public function formatDocumentSave($value);
+
     abstract public function formatDataSave($value);
 
     abstract public function format($value);

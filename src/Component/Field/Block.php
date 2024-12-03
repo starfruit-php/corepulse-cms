@@ -75,6 +75,11 @@ class Block extends AbstractField
         return $result;
     }
 
+    public function formatDocumentSave($value)
+    {
+        return $value;
+    }
+    
     public function formatDataSave($values)
     {
         $datas = [];
@@ -91,7 +96,7 @@ class Block extends AbstractField
                         $getClass = '\\CorepulseBundle\\Component\\Field\\' . ucfirst($type);
                         if (!class_exists($getClass)) continue;
                         
-                        $component = new $getClass($this->getObject(), $this->getLayout(), $v, $this->getLocalized());
+                        $component = new $getClass($this->getObjectOrDocument(), $this->getLayout(), $v, $this->getLocalized());
                         $valueData =  $component->getDataSave();
                         if($type == 'localizedfields' && $this->getValue()) {
                             $revertItems = $valueData->getItems();
@@ -127,7 +132,7 @@ class Block extends AbstractField
         $children = $this->layout->children;
         if (!empty($children)) {
             foreach ($children as $key => $value) {
-                $layout = ClassServices::getFieldProperty($value, $this->getLocalized(), $this->getObject()?->getClassId());
+                $layout = ClassServices::getFieldProperty($value, $this->getLocalized(), $this->getObjectOrDocument()?->getClassId());
                 if(in_array( $layout['fieldtype'], ClassServices::TYPE_OPTION)) {
                     $this->optionKey[$layout['name']] = [
                         'fieldId' => $layout['name'],

@@ -79,6 +79,11 @@ class DataObjectServices
         $fieldDefinitions = $classDefinition->getFieldDefinitions();
 
         foreach ($updateData as $key => $value) {
+            if ($key == '_publish') {
+                $object->setPublished($value === 'publish');
+                continue;
+            }
+            
             if (isset($fieldDefinitions[$key])) {
                 $object = self::processField($object, $fieldDefinitions[$key], $key, $value, $locale);
             } elseif (isset($fieldDefinitions['localizedfields'])) {

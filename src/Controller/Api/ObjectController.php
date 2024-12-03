@@ -250,7 +250,8 @@ class ObjectController extends BaseController
 
             return $this->sendResponse($data);
         } catch (\Exception $e) {
-            return $this->sendError($e->getMessage());
+            return $this->sendResponse([]);
+            // return $this->sendError($e->getMessage());
         }
     }
 
@@ -374,7 +375,12 @@ class ObjectController extends BaseController
                 $object->save();
 
                 if ($this->request->get('checked')) {
-                    return $this->sendResponse(['success' => true, 'message' => 'Create success']);
+                    return $this->sendResponse([
+                        'success' => true, 
+                        'message' => 'Create success', 
+                        'id' => $object->getId(), 
+                        'classId' => $object->getClassId()
+                    ]);
                 }
 
                 $data['data'] =  DataObjectServices::getData($object, $fields);
@@ -461,6 +467,7 @@ class ObjectController extends BaseController
         if ($data) {
             $data = json_decode($data, true);
             // try {
+                $data = array_merge($data, ['_publish' => $this->request->get('_publish')]);
                 DataObjectServices::saveEdit($objectFromDatabase, $data, $localized);
                 return $this->sendResponse(['success' => true, 'message' => 'Object update success.']);
             // } catch (\Throwable $th) {
@@ -510,6 +517,7 @@ class ObjectController extends BaseController
         $objectData['layoutData'] = $this->objectLayoutData;
         $objectData['sidebar'] = DataObjectServices::getSidebarData($object, $this->request->get('_locale', $this->request->getLocale()));
         $objectData['optionData'] = $this->optionData;
+        $objectData['classId'] = $object->getClassId();
     }
 
     protected function getObjectVarsRecursive($object, $layout, $classId, $localized = 'fieldcollections', $optionKey = false)

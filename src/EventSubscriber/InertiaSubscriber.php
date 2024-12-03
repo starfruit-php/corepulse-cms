@@ -26,7 +26,6 @@ use CorepulseBundle\Services\Helper\SearchHelper;
 
 class InertiaSubscriber implements EventSubscriberInterface
 {
-    CONST PATH_ROOT = '/cms';
     use PimcoreContextAwareTrait;
 
     protected $security;
@@ -70,7 +69,7 @@ class InertiaSubscriber implements EventSubscriberInterface
         $response = $event->getResponse();
 
         if (!$event->isMainRequest()) {
-            return; // only master requests inject editmode assets
+            return;
         }
 
         if (!$this->matchesPimcoreContext($request, PimcoreContextResolver::CONTEXT_DEFAULT)) {
@@ -91,34 +90,27 @@ class InertiaSubscriber implements EventSubscriberInterface
             return;
         }
 
-        // $this->logger->info('Injecting editmode assets into request {request}', [
-        //     'request' => $request->getPathInfo(),
-        // ]);
-
-        // dd($response);
-
-
         $this->addEditmodeAssets($document, $response);
-        $this->twig->addGlobal('document', $this->twig->getGlobals()['document1']);
+        $this->twig->addGlobal('document', $this->twig->getGlobals()['document']);
         // set sameorigin header for editmode responses
-        $response->headers->set('X-Frame-Options', 'SAMEORIGIN', true);
+        // $response->headers->set('X-Frame-Options', 'ALLOWALL', true);
     }
 
     public function onKernelView($event)
     {
-        if (array_key_exists('document1', $this->twig->getGlobals())) {
+        if (array_key_exists('document', $this->twig->getGlobals())) {
             // Key 'document1' exists in the array
             // Your code here
-            $this->twig->addGlobal('document', $this->twig->getGlobals()['document1']);
+            $this->twig->addGlobal('document', $this->twig->getGlobals()['document']);
         }
     }
 
     public function onKernelControllerArguments($event)
     {
-        if (array_key_exists('document1', $this->twig->getGlobals())) {
+        if (array_key_exists('document', $this->twig->getGlobals())) {
             // Key 'document1' exists in the array
             // Your code here
-            $this->twig->addGlobal('document', $this->twig->getGlobals()['document1']);
+            $this->twig->addGlobal('document', $this->twig->getGlobals()['document']);
         }
     }
 

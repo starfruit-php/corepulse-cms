@@ -4,6 +4,7 @@ namespace CorepulseBundle\Component\Field;
 
 use Starfruit\BuilderBundle\Tool\AssetTool;
 use Pimcore\Model\Asset;
+use Pimcore\Model\Document\Editable\Image as DocumentImage;
 
 class Image extends AbstractField
 {
@@ -37,6 +38,41 @@ class Image extends AbstractField
         }
 
         return $image;
+    }
+
+    public function formatDocumentSave($value)
+    {
+        $editable = new DocumentImage();
+        $editable->setDocument($this->getObjectOrDocument());
+        $editable->setName($this->getLayout()->name);
+
+        $id = 0;
+        if ($value && isset($value['id'])) {
+            $id = (int)$value['id'];
+        } elseif ($value && $format = reset($value)) {
+            $id = (int)$format['id'];
+        }
+
+        if ($id) {
+            $image = Asset::getById($id);
+            if ($image) {
+                $editable->setDataFromEditmode([
+                    'id' => (int) $image->getId(),
+                    "alt" => "",
+                    "cropPercent" => false,
+                    "cropWidth" => 0.0,
+                    "cropHeight" => 0.0,
+                    "cropTop" => 0.0,
+                    "cropLeft" => 0.0,
+                    "hotspots" => [],
+                    "marker" => [],
+                    "thumbnail" => null
+                ]);
+            }
+        }
+        
+
+        return $editable;
     }
 
     public function getFrontEndType()

@@ -25,40 +25,48 @@ class MediaController extends BaseController
      *
      * @throws \Exception
      */
-    public function getAsset(
-        Request $request,
-        PaginatorInterface $paginator
-    ): JsonResponse {
+    public function getAsset(): JsonResponse
+    {
         try {
-            $orderByOptions = ['creationDate'];
-            $conditions = $this->getPaginationConditions($request, $orderByOptions);
+            $conditions = $this->getPaginationConditions($this->request, []);
             list($page, $limit, $condition) = $conditions;
 
             $condition = array_merge($condition, [
-                'order_by' => '',
-                'order' => '',
                 'id' => '',
                 'filterRule' => '',
                 'filter' => '',
                 'search' => '',
                 'type' => '',
+                'checked' => '',
             ]);
 
-            $messageError = $this->validator->validate($condition, $request);
+            $messageError = $this->validator->validate($condition, $this->request);
             if ($messageError) return $this->sendError($messageError);
 
-            $order_by = $request->get('order_by') ? $request->get('order_by') : 'creationDate';
-            $order = $request->get('order') ? $request->get('order') : 'DESC';
-            $parentId = $request->get('id') ? $request->get('id') : '1';
-            $search = $request->get('search');
-            $type = $request->get('type');
+            $orderKey = $this->request->get('order_by');
+            $order = $this->request->get('order');
+            $parentId = $this->request->get('id');
+            $checked = $this->request->get('checked', false);
+            if (empty($orderKey)) $orderKey = 'creationDate';
+            if (empty($order)) $order = 'desc';
+            if (empty($parentId)) $parentId = 1;
 
+            $search = $this->request->get('search');
+            $type = $this->request->get('type');
 
-            $conditionQuery = 'id != 1 AND type != "folder" AND parentId = :parentId';
+            $conditionQuery = 'id != 1  AND parentId = :parentId';
             $conditionParams['parentId'] = $parentId;
 
-            $filterRule = $request->get('filterRule');
-            $filter = $request->get('filter');
+            if (!$checked) $conditionQuery .= ' AND type != "folder" ';
+            if ($search) $conditionQuery .= ' AND ' . "LOWER(`filename`)" . " LIKE LOWER('%" . $search . "%')";
+
+            if ($type) {
+                $conditionQuery .= ' AND type = :type';
+                $conditionParams['type'] = $type;
+            }
+
+            $filterRule = $this->request->get('filterRule');
+            $filter = $this->request->get('filter');
 
             if ($filterRule && $filter) {
                 $arrQuery = $this->getQueryCondition($filterRule, $filter);
@@ -69,29 +77,18 @@ class MediaController extends BaseController
                 }
             }
 
-            if ($search) {
-                $conditionQuery .= ' AND ' . "LOWER(`filename`)" . " LIKE LOWER('%" . $search . "%')";
-            }
-
-            if ($type) {
-                $conditionQuery .= ' AND type = :type';
-                $conditionParams['type'] = $type;
-            }
-
             $listingAsset = new \Pimcore\Model\Asset\Listing();
             $listingAsset->setCondition($conditionQuery, $conditionParams);
-            $listingAsset->setOrderKey($order_by);
+            $listingAsset->setOrderKey($orderKey);
             $listingAsset->setOrder($order);
 
-            $paginationData = $this->helperPaginator($paginator, $listingAsset, $page, $limit);
-            $data = array_merge(
-                [
-                    'data' => []
-                ],
-                $paginationData,
-            );
+            $paginationData = $this->paginator($listingAsset, $page, $limit);
+            $data = [
+                'data' => [],
+                'paginationData' => $paginationData->getPaginationData(),
+            ];
 
-            foreach ($listingAsset as $item) {
+            foreach ($paginationData as $item) {
                 if ($item->getType() != "folder") {
                     // $publicURL = AssetServices::getThumbnailPath($item);
                     $publicURL = $item?->getFrontendPath();
@@ -99,6 +96,18 @@ class MediaController extends BaseController
                         'id' => $item->getId(),
                         'type' => $item->getType(),
                         'mimetype' => $item->getMimetype(),
+                        'filename' => $item->getFileName(),
+                        'fullPath' => $publicURL,
+                        'parentId' => $item->getParentId(),
+                        'checked' => false,
+                        'path' => $item->getFullPath(),
+                    ];
+                } else {
+                    $publicURL = $item?->getFrontendPath();
+                    $data['data'][] = [
+                        'id' => $item->getId(),
+                        'type' => $item->getType(),
+                        'mimetype' => $item->getType(),
                         'filename' => $item->getFileName(),
                         'fullPath' => $publicURL,
                         'parentId' => $item->getParentId(),
@@ -126,26 +135,20 @@ class MediaController extends BaseController
      * @throws \Exception
      */
     public function treeListing(
-        Request $request,
-        PaginatorInterface $paginator
     ): JsonResponse {
         try {
-
-            $orderByOptions = ['mimetype'];
-            $conditions = $this->getPaginationConditions($request, $orderByOptions);
+            $conditions = $this->getPaginationConditions($this->request, []);
             list($page, $limit, $condition) = $conditions;
 
             $condition = array_merge($condition, [
-                'order_by' => '',
-                'order' => '',
                 'filterRule' => '',
                 'filter' => '',
             ]);
-            $messageError = $this->validator->validate($condition, $request);
+            $messageError = $this->validator->validate($condition, $this->request);
             if($messageError) return $this->sendError($messageError);
 
-            $orderBy = $request->get('order_by', 'mimetype');
-            $order = $request->get('order', 'asc');
+            $orderBy = $this->request->get('order_by', 'mimetype');
+            $order = $this->request->get('order', 'asc');
             if ($orderBy == 'key') {
                 $orderBy = 'filename';
             }
@@ -153,8 +156,8 @@ class MediaController extends BaseController
             $conditionQuery = '`parentId` = 0 OR `parentId` = 1 AND type = "folder"';
             $conditionParams = [];
 
-            $filterRule = $request->get('filterRule');
-            $filter = $request->get('filter');
+            $filterRule = $this->request->get('filterRule');
+            $filter = $this->request->get('filter');
 
             if ($filterRule && $filter) {
                 $arrQuery = $this->getQueryCondition($filterRule, $filter);
@@ -212,18 +215,15 @@ class MediaController extends BaseController
      * @throws \Exception
      */
     public function getFolder(
-        Request $request,
-        PaginatorInterface $paginator
     ): JsonResponse {
         try {
-            $orderByOptions = ['creationDate'];
-            $conditions = $this->getPaginationConditions($request, $orderByOptions);
+            $conditions = $this->getPaginationConditions($this->request, []);
             list($page, $limit, $condition) = $conditions;
 
             $condition = array_merge($condition, [
                 'types' => '',
             ]);
-            $messageError = $this->validator->validate($condition, $request);
+            $messageError = $this->validator->validate($condition, $this->request);
             if($messageError) return $this->sendError($messageError);
 
             $conditionQuery = 'id != 1 AND parentId = :parentId';
@@ -231,7 +231,7 @@ class MediaController extends BaseController
                 'parentId' => 1,
             ];
 
-            $checkType = $request->get('types');
+            $checkType = $this->request->get('types');
             if (!$checkType) $checkType = 'image';
 
             $list = new \Pimcore\Model\Asset\Listing();
@@ -240,20 +240,18 @@ class MediaController extends BaseController
             $list->setOrder('ASC');
             $list->load();
 
-            $paginationData = $this->helperPaginator($paginator, $list, $page, $limit);
-            $data = array_merge(
-                [
-                    'data' => []
-                ],
-                $paginationData,
-            );
+            $paginationData = $this->paginator($list, $page, $limit);
+            $data = [
+                'data' => [],
+                'paginationData' => $paginationData->getPaginationData(),
+            ];
 
             $data['data']['folders'][] = [
                 'id' => 1,
                 'name' => 'Home',
                 'icon' => '/bundles/pimcoreadmin/img/flat-color-icons/home-gray.svg',
             ];
-            $images = [];
+
             foreach ($list as $item) {
                 if ($item->getType() == "folder") {
                     $data['folders'][] = [
@@ -295,23 +293,21 @@ class MediaController extends BaseController
      * @throws \Exception
      */
     public function treeChildrenDoc(
-        Request $request,
-        PaginatorInterface $paginator
     ): JsonResponse {
         try {
             $orderByOptions = ['mimetype'];
-            $conditions = $this->getPaginationConditions($request, $orderByOptions);
+            $conditions = $this->getPaginationConditions($this->request, $orderByOptions);
             list($page, $limit, $condition) = $conditions;
 
             $condition = array_merge($condition, [
                 'id' => 'required',
                 'config' => '',
             ]);
-            $messageError = $this->validator->validate($condition, $request);
+            $messageError = $this->validator->validate($condition, $this->request);
             if($messageError) return $this->sendError($messageError);
 
-            $id = $request->get('id');
-            $config = $request->get('config');
+            $id = $this->request->get('id');
+            $config = $this->request->get('config');
 
             $datas['data'] = [];
 
