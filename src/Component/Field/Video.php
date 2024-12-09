@@ -5,7 +5,6 @@ namespace CorepulseBundle\Component\Field;
 use Pimcore\Model\Asset;
 use CorepulseBundle\Component\Field\Image;
 use Pimcore\Model\DataObject\Data\Video as DataVideo;
-use Pimcore\Bootstrap;
 
 class Video extends Image
 {
@@ -27,6 +26,32 @@ class Video extends Image
         return $data;
     }
 
+    public function formatDocument($value) 
+    {
+        $data = $value?->getData();
+
+        $data['posterId'] = $value?->getPoster();
+        $data['dataId'] = $data['id'];
+
+        if ($data['type'] == 'asset') {
+            if (is_numeric($data['id'])) {
+                $asset = Asset::getById($data['id']);
+                if ($asset) {
+                    $data['path'] = $asset->getFrontendPath();
+                }
+
+            }
+            if (is_numeric($data['posterId'])) {
+                $poster = Asset::getById($data['posterId']);
+                if ($poster) {
+                    $data['poster'] = $poster->getFrontendPath();
+                }
+            }
+        }
+
+        return $data;
+    }
+
     public function getFrontEndType()
     {
         return 'video';
@@ -36,7 +61,7 @@ class Video extends Image
     {
         $video = new DataVideo();
 
-        if ($value && isset($value['type'])) {
+        if (is_array($value) && isset($value['type'])) {
             $video->setType($value['type']);
             if ($value['type'] == 'asset') {
                 $container = \Pimcore::getContainer();
@@ -50,7 +75,7 @@ class Video extends Image
                 if (isset($value['description'])) $video->setDescription($value['description']);
 
                 if (isset($value['dataId'])) $video->setData(Asset::getById($value['dataId']));
-                if (isset($value['data']) && !$video->getData()) {
+                if (isset($value['path']) && !$video->getData()) {
                     $dataPrefix =  str_replace($prefix, '', $value['data']);
                     $video->setData(Asset::getByPath($dataPrefix));
                 }
@@ -61,7 +86,7 @@ class Video extends Image
                     $video->setPoster( Asset\Image::getByPath($posterPrefix));
                 }
             } else {
-                if (isset($value['data'])) $video->setData($value['data']);
+                if (isset($value['path'])) $video->setData($value['path']);
             }
         }
 

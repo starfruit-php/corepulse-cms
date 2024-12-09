@@ -2,7 +2,7 @@
 
 namespace CorepulseBundle\Component\Field;
 
-use Pimcore\Model\DataObject\SelectOptions\Province;
+use Pimcore\Model\Document\Editable\Select as DocumentSelect;
 
 class Select extends AbstractField
 {
@@ -13,7 +13,7 @@ class Select extends AbstractField
 
     public function formatDocument($value)
     {
-        return $value;
+        return $value?->getText();
     }
 
     public function formatBlock($value)
@@ -23,7 +23,18 @@ class Select extends AbstractField
     
     public function formatDocumentSave($value)
     {
-        return $value;
+        $editable = $this->getObjectOrDocument()->getEditable($this->getLayout()->name);
+        
+        if (!$editable) {
+            $editable = new DocumentSelect();
+            $editable->setDocument($this->getObjectOrDocument());
+            $editable->setName($this->getLayout()->name);
+            $editable->setRealName($this->getLayout()->realName);
+        }
+
+        $editable->setDataFromEditmode($value);
+
+        return $editable;
     }
 
     public function formatDataSave($value)

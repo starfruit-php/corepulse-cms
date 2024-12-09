@@ -10,14 +10,33 @@ class Image extends AbstractField
 {
     public function formatDocument($value) 
     {
-        return $this->format($value);
+        $data = [
+            [
+                'type' => $value?->getImage()?->getType(),
+                'mimetype' => $value?->getImage()?->getMimetype(),
+                'filename' => $value?->getImage()?->getFileName(),
+                'parentId' => $value?->getImage()?->getParentId(),
+                'checked' => true,
+                'path' => $value?->getImage()?->getFullPath(),
+                'fullPath' => $value?->getImage()?->getFrontendPath(),
+                'id' => $value?->getId(),
+            ]
+        ];
+
+        return $data;
     }
 
     public function format($value)
     {
         $data = [
             [
-                'path' => $value?->getFrontendPath(),
+                'type' => $value?->getType(),
+                'mimetype' => $value?->getMimetype(),
+                'filename' => $value?->getFileName(),
+                'parentId' => $value?->getParentId(),
+                'checked' => true,
+                'path' => $value?->getFullPath(),
+                'fullPath' => $value?->getFrontendPath(),
                 'id' => $value?->getId()
             ]
         ];
@@ -33,7 +52,7 @@ class Image extends AbstractField
     public function formatDataSave($value)
     {
         $image = null;
-        if ($value && $format = reset($value)) {
+        if (is_array($value) && $format = reset($value)) {
             $image = Asset::getById((int)$format['id']);
         }
 
@@ -45,11 +64,10 @@ class Image extends AbstractField
         $editable = new DocumentImage();
         $editable->setDocument($this->getObjectOrDocument());
         $editable->setName($this->getLayout()->name);
+        $editable->setRealName($this->getLayout()->realName);
 
         $id = 0;
-        if ($value && isset($value['id'])) {
-            $id = (int)$value['id'];
-        } elseif ($value && $format = reset($value)) {
+        if (is_array($value) && $format = reset($value)) {
             $id = (int)$format['id'];
         }
 

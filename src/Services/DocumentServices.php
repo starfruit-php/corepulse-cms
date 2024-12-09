@@ -24,13 +24,19 @@ class DocumentServices
 
     static public function processField($document, $param) 
     {
+        if(self::checkBlockName($param['name'])) return $document;
+        
         $fieldType = $param['type'];
         $getClass = '\\CorepulseBundle\\Component\\Field\\' . ucfirst($fieldType);
 
         try {
             if (class_exists($getClass)) {
                 $component = new $getClass($document, $param, $param['data'], null, false);
-                $document->setEditable($component->getDataSave());
+                if ($fieldType == 'block') {
+                    return $component->getDataSave();
+                } else {
+                    $document->setEditable($component->getDataSave());
+                }
             }
         
             return $document;
@@ -38,6 +44,14 @@ class DocumentServices
             $param['error'] = $th->getMessage();
             return $param;
         }
+    }
+
+    static public function checkBlockName($string) {
+        $hasColonAndNumber = preg_match('/:\d+/', $string);
+        
+        $hasDot = strpos($string, '.') !== false;
+        
+        return $hasColonAndNumber && $hasDot;
     }
 
     public static function createDoc($key, $title, $type, $parentId)
@@ -162,9 +176,20 @@ class DocumentServices
 
         if ($document) {
             foreach ($document->getEditables() as $key => $value) {
-                $type = $value->getType();
-                $function = 'get'. ucwords($type);
-                $data[$key] = FieldServices::{$function}($document, $value);
+                if (!strpos($key, ":") === false) continue;
+                
+                $fieldType = $value->getType();
+                $getClass = '\\CorepulseBundle\\Component\\Field\\' . ucfirst($fieldType);
+        
+                try {
+                    if (class_exists($getClass)) {
+                        $component = new $getClass($document, $value, null, null, false);
+                        $data[$key] = $component->getValue();
+                    }
+                
+                } catch (\Throwable $th) {
+                    // dd($fieldType, $th->getMessage());
+                }
             }
         }
         return $data;

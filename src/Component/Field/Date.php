@@ -3,6 +3,7 @@
 namespace CorepulseBundle\Component\Field;
 
 use Carbon\Carbon;
+use Pimcore\Model\Document\Editable\Date as DocumentDate;
 
 class Date extends AbstractField
 {
@@ -18,7 +19,7 @@ class Date extends AbstractField
 
     public function formatDocument($value)
     {
-        return $value?->format("Y/m/d");
+        return $value?->getData()?->format("Y/m/d");
     }
 
     public function formatDataSave($value)
@@ -34,7 +35,18 @@ class Date extends AbstractField
 
     public function formatDocumentSave($value)
     {
-        return $value;
+        $editable = $this->getObjectOrDocument()->getEditable($this->getLayout()->name);
+        
+        if (!$editable) {
+            $editable = new DocumentDate();
+            $editable->setDocument($this->getObjectOrDocument());
+            $editable->setName($this->getLayout()->name);
+            $editable->setRealName($this->getLayout()->realName);
+        }
+
+        $editable->setDataFromEditmode($value);
+
+        return $editable;
     }
 
     public function getFrontEndType()

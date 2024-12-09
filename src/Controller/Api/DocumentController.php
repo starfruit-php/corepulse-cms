@@ -117,7 +117,7 @@ class DocumentController extends BaseController
      */
     public function detail()
     {
-        try {
+        // try {
             $condition = [
                 'id' => 'required',
             ];
@@ -138,7 +138,6 @@ class DocumentController extends BaseController
                                 return $this->sendResponse(['success' => false, 'message' => $document['name'] . ': ' . $document['error']]);
                             }
                         }
-
                         $document->setPublished($this->request->get('_publish') === 'publish');
                         $document->save();
                         return $this->sendResponse(['success' => true, 'message' => "Update document success"]);
@@ -154,24 +153,15 @@ class DocumentController extends BaseController
 
                 if ($document->getType() != 'folder') {
                     $data['data'] = self::detailResponse($document);
-                    $editTables = $document->getEditables();
-                    foreach ($editTables as $key => $value) {
-                        $function = 'get'. ucwords($value->getType());
-                        $data['data']['editTables'][] = [
-                            'name' => $value->getName(),
-                            'type' => $value->getType(),
-                            'value' => FieldServices::{$function}($document, $value),
-                        ];
-                    }
                 }
                 
                 return $this->sendResponse($data);
             }
             return $this->sendError("page.not.found");
 
-        } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
-        }
+        // } catch (\Exception $e) {
+        //     return $this->sendError($e->getMessage(), 500);
+        // }
     }
 
     /**
@@ -218,7 +208,7 @@ class DocumentController extends BaseController
                     if ($document) {
                         $document->delete();
                     } else {
-                        return $this->sendError('Can not find document to be deleted');
+                        return $this->sendResponse([ 'success' => false, 'message' => "Can not find document to be deleted"]);
                     }
                 }
             } else {
@@ -226,12 +216,11 @@ class DocumentController extends BaseController
                 if ($document) {
                     $document->delete();
                 } else {
-                    return $this->sendError('Can not find document to be deleted');
+                    return $this->sendResponse([ 'success' => false, 'message' => "Can not find document to be deleted"]);
                 }
             }
 
-            return $this->sendResponse("Delete page success");
-
+            return $this->sendResponse([ 'success' => true, 'message' => "Delete page success"]);
         } catch (\Exception $e) {
             return $this->sendError($e->getMessage(), 500);
         }

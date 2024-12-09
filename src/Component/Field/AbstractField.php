@@ -14,13 +14,16 @@ abstract class AbstractField implements FieldInterface
 
     protected $isObject;
 
-    public function __construct($objectOrDocument, $layout = null, $dataValue = null, $localized = null, $isObject = true)
+    protected $isDocumentBlock;
+
+    public function __construct($objectOrDocument, $layout = null, $dataValue = null, $localized = null, $isObject = true, $isDocumentBlock = false)
     {
         $this->setLayout($layout);
         $this->setObjectOrDocument($objectOrDocument);
         $this->setDataValue($dataValue);
         $this->setLocalized($localized);
         $this->setIsObject($isObject);
+        $this->setIsDocumentBlock($isDocumentBlock);
     }
 
     // Getter and Setter methods
@@ -42,6 +45,16 @@ abstract class AbstractField implements FieldInterface
     public function setIsObject($isObject)
     {
         $this->isObject = $isObject;
+    }
+
+    public function getIsDocumentBlock()
+    {
+        return $this->isDocumentBlock;
+    }
+
+    public function setIsDocumentBlock($isDocumentBlock)
+    {
+        $this->isDocumentBlock = $isDocumentBlock;
     }
 
     public function getLayout()
@@ -106,7 +119,7 @@ abstract class AbstractField implements FieldInterface
     public function getValue()
     {
         if (!$this->getIsObject()) {
-            return $this->formatDocument($this->getObjectOrDocument()->getData());
+            return $this->formatDocument($this->getLayout());
         }
     
         if ($this->getObjectOrDocument() instanceof BlockElement) {

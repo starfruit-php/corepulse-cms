@@ -9,12 +9,14 @@ use CorepulseBundle\Services\Helper\Text\PrettyText;
 class ArrayHelper
 {
     //xử lý filter
-    public static function filterData($data, $key, $value)
+    public static function filterData($data, $key, $value, $isEqual = false)
     {
         if (count($data)) {
 
-            $result = array_filter($data, function ($item) use ($key, $value) {
+            $result = array_filter($data, function ($item) use ($key, $value, $isEqual) {
                 $itemData = is_object($item) ? get_object_vars($item) : $item;
+
+                if ($isEqual) return $itemData[$key] === $value;
 
                 return self::checkValue($itemData[$key], $value);
             });

@@ -13,9 +13,9 @@ class Input extends AbstractField
         return $value;
     }
 
-    public function formatDocument($value)
+    public function formatDocument($value) 
     {
-        return $value;
+        return $value->getValue();
     }
 
     public function formatBlock($value)
@@ -30,10 +30,15 @@ class Input extends AbstractField
 
     public function formatDocumentSave($value)
     {
-        $editable = new DocumentInput();
-        $editable->setDocument($this->getObjectOrDocument());
-        $editable->setName($this->getLayout()->name);
-        $editable->setDataFromResource($value ? $value : '');
+        $editable = $this->getObjectOrDocument()->getEditable($this->getLayout()->name);
+        
+        if (!$editable) {
+            $editable = new DocumentInput();
+            $editable->setDocument($this->getObjectOrDocument());
+            $editable->setName($this->getLayout()->name);
+            $editable->setRealName($this->getLayout()->realName);
+        }
+        $editable->setDataFromEditmode($value ? $value : '');
        
         return $editable;
     }

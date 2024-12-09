@@ -7,22 +7,76 @@ use CorepulseBundle\Services\Helper\ArrayHelper;
 use Pimcore\Model\DataObject\Data\BlockElement;
 use CorepulseBundle\Services\ClassServices;
 use Pimcore\Model\DataObject\Localizedfields;
+use Pimcore\Model\Document\Editable\Block as DocumentBlock;
 
 class Block extends AbstractField
 {
     protected $optionKey;
 
-    public function __construct($data, $layout = null, $value = null, $localized = false, $optionKey = [])
+    public function __construct($objectOrDocument, $layout = null, $value = null, $localized = false, $isObject = true)
     {
-        parent::__construct($data, $layout, $value, $localized);
+        parent::__construct($objectOrDocument, $layout, $value, $localized, $isObject);
 
-        $this->optionKey = $optionKey;
+        $this->optionKey = [];
     }
 
-    // 
     public function formatDocument($value)
     {
-        return $this->format($value);
+        $prefixName = $value->getName();
+        $allValue = $this->filterAllValue($this->getObjectOrDocument()->getEditables(), $prefixName);
+
+        $datas = [];
+        foreach ($allValue as $k => $v) {
+            $fieldType = $v->getType();
+            $getClass = '\\CorepulseBundle\\Component\\Field\\' . ucfirst($fieldType);
+        
+            try {
+                if (class_exists($getClass)) {
+                    $component = new $getClass($this->getObjectOrDocument(), $v, null, null, false);
+                    $datas[$k] = $component->getValue();
+                }
+                
+            } catch (\Throwable $th) {
+                // dd($fieldType, $th->getMessage());
+            }
+        }
+
+        $revertData = [];
+
+        $indices = $value->getIndices();
+        
+        if (is_array($indices) && count($indices)) {
+            foreach ($datas as $k => $v) {
+               
+
+                if (preg_match("/$prefixName:(\d+)\.(.*)/", $k, $matches)) {
+                    $bannerNumber = $matches[1];
+                    $field = $matches[2];
+    
+                    if ($bannerNumber > count($indices)) continue;
+                    
+                    if (!isset($revertData[$bannerNumber])) {
+                        $revertData[$bannerNumber] = [];
+                    }
+    
+                    $revertData[$bannerNumber][$field] = $v;
+                }
+            }    
+        }
+        
+        $revertData = array_values($revertData);
+
+        return $revertData;
+    }
+
+    public function filterAllValue($data, $prefix)
+    {
+        $prefix = $prefix . ':';
+        $result = array_filter($data, function ($value, $key) use ($prefix) {
+            return strpos($key, $prefix) === 0;
+        }, ARRAY_FILTER_USE_BOTH);
+
+        return $result;
     }
 
     // chưa xử lý
@@ -77,7 +131,43 @@ class Block extends AbstractField
 
     public function formatDocumentSave($value)
     {
-        return $value;
+        $editable = new DocumentBlock();
+        $editable->setDocument($this->getObjectOrDocument());
+        $editable->setName($this->getLayout()->name);
+
+        $config = $this->getLayout()?->config['template']['editables'];
+        $i = 0;
+        $blockData = [];
+        foreach ($value as $key => $item) {
+            $i++;
+            $blockData[] = $i;
+            foreach ($item as $itemKey => $itemValue) {
+                $fd = ArrayHelper::filterData($config, 'realName', $itemKey, true);
+                if (empty($fd)) {
+                    continue;
+                }
+
+                $itemConfig = reset($fd);
+
+                $fieldType = $itemConfig['type'];
+                $getClass = '\\CorepulseBundle\\Component\\Field\\' . ucfirst($fieldType);
+            
+                try {
+                    if (class_exists($getClass)) {
+                        $name = $itemConfig['name'];
+                        $itemConfig['name'] = str_replace(':1000000.', ":$i.", $name);
+                        $component = new $getClass($this->getObjectOrDocument(), $itemConfig, $itemValue, null, false, true);
+                        $this->getObjectOrDocument()->setEditable($component->getDataSave());
+                    }
+                } catch (\Throwable $th) {
+                    dd($fieldType, $th->getMessage());
+                }
+            }
+        }
+        
+        $editable->setDataFromEditmode($blockData);
+
+        return $this->getObjectOrDocument()->setEditable($editable);
     }
     
     public function formatDataSave($values)
