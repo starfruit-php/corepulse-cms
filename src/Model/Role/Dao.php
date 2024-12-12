@@ -30,26 +30,6 @@ class Dao extends AbstractDao
     }
 
     /**
-     * get user by id
-     *
-     * @throws \Exception
-     */
-    public function getByUsername(?string $username = null): void
-    {
-        if ($username !== null) {
-            $this->model->setUsername($username);
-        }
-
-        $data = $this->db->fetchAssociative('SELECT * FROM ' . $this->tableName . ' WHERE username = ?', [$this->model->getUsername()]);
-
-        if (!$data) {
-            throw new NotFoundException("Object with the Username " . $this->model->getUsername() . " doesn't exists");
-        }
-
-        $this->assignVariablesToModel($data);
-    }
-
-    /**
      * save user
      */
     public function save(): void

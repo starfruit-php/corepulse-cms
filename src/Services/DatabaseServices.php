@@ -14,6 +14,7 @@ class DatabaseServices
     const COREPULSE_TRANSLATION_TABLE = 'corepulse_translations';
     const COREPULSE_USER_TABLE = 'corepulse_users';
     const COREPULSE_SEARCH_HISTORY = 'corepulse_search_history';
+    const COREPULSE_ROLE_TABLE = 'corepulse_role';
 
     public static function createTables()
     {
@@ -24,6 +25,7 @@ class DatabaseServices
         self::createCorepulseTranslation();
         self::initUserDefault();
         self::createCorepulseSearchHistory();
+        self::createCorepulseRole();
     }
 
     public static function initUserDefault()
@@ -46,6 +48,7 @@ class DatabaseServices
         self::updateCorepulseUser();
         self::updateCorepulsePlausible();
         self::updateCorepulseOrderTimeline();
+        self::updateCorepulseRole();
     }
 
     public static function createCorepulseIndexing()
@@ -199,6 +202,36 @@ class DatabaseServices
             UNIQUE KEY `userId` (`userId`)
             ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         COMMIT;";
+
+        Db::get()->executeQuery($query);
+    }
+
+    public static function createCorepulseRole()
+    {
+        $query = " CREATE TABLE IF NOT EXISTS " . self::COREPULSE_ROLE_TABLE . " (
+            `id` int(11) NOT NULL AUTO_INCREMENT,
+            `name` varchar(255)  DEFAULT NULL,
+            `permission` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+            `createAt` timestamp DEFAULT current_timestamp(),
+            `updateAt` timestamp DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `name` (`name`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        COMMIT;";
+
+        Db::get()->executeQuery($query);
+    }
+
+    public static function updateCorepulseRole()
+    {
+        $query = " ALTER TABLE " . self::COREPULSE_ROLE_TABLE . "
+            ADD COLUMN IF NOT EXISTS `id` int(11) NOT NULL AUTO_INCREMENT,
+            ADD COLUMN IF NOT EXISTS `orderId` int(11) NOT NULL,
+            ADD COLUMN IF NOT EXISTS `name` varchar(255)  DEFAULT NULL,
+            ADD COLUMN IF NOT EXISTS `permission` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+            ADD COLUMN IF NOT EXISTS `createAt` timestamp DEFAULT current_timestamp(),
+            ADD COLUMN IF NOT EXISTS `updateAt` timestamp DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+            ADD UNIQUE KEY IF NOT EXISTS `name` (`name`);";
 
         Db::get()->executeQuery($query);
     }

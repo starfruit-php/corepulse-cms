@@ -20,7 +20,7 @@ class Role extends AbstractModel
 
     public function getClass()
     {
-        return 'User'; // You can customize this to return the actual class name or perform other logic.
+        return 'role'; // You can customize this to return the actual class name or perform other logic.
     }
 
     /**
@@ -35,7 +35,7 @@ class Role extends AbstractModel
 
     public function getUserIdentifier(): string
     {
-        return $this->username; // Replace with the actual property used as the username
+        return $this->name; // Replace with the actual property used as the username
     }
 
     public static function getById(int $id): ?self

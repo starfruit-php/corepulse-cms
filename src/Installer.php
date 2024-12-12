@@ -58,7 +58,8 @@ class Installer extends SettingsStoreAwareInstaller
             `permission` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL,
             `createAt` timestamp NULL DEFAULT current_timestamp(),
             `updateAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-            PRIMARY KEY (`id`)
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `name` (`name`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;',
         'corepulse_plausible' => 'CREATE TABLE `corepulse_plausible` (
             `id` int(11) NOT NULL AUTO_INCREMENT,

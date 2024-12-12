@@ -2,18 +2,14 @@
 
 namespace CorepulseBundle\Controller\Api;
 
-use Pimcore\Translation\Translator;
-use Symfony\Component\HttpFoundation\RequestStack;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
-use Knp\Component\Pager\PaginatorInterface;
+use CorepulseBundle\Services\UserServices;
 use CorepulseBundle\Model\User;
 use CorepulseBundle\Model\Role;
 use \Pimcore\Model\Asset;
 use CorepulseBundle\Security\Hasher\CorepulseUserPasswordHasher;
-use CorepulseBundle\Services\RoleServices;
 
 /**
  * @Route("/user")
@@ -21,65 +17,55 @@ use CorepulseBundle\Services\RoleServices;
 class UserController extends BaseController
 {
     /**
-     * @Route("/listing", name="api_user_listing", methods={"GET"})
-     *
-     * {mô tả api}
-     *
-     * @param Cache $cache
-     *
-     * @return JsonResponse
-     *
-     * @throws \Exception
+     * @Route("/listing", name="corepulse_api_user_listing", methods={"GET"})
      */
-    public function listingAction(
-        Request $request,
-        PaginatorInterface $paginator
-    ): JsonResponse {
+    public function listing(): JsonResponse {
         try {
             $this->setLocaleRequest();
-
-            $orderByOptions = ['name'];
-            $conditions = $this->getPaginationConditions($request, $orderByOptions);
+            $conditions = $this->getPaginationConditions($this->request, []);
             list($page, $limit, $condition) = $conditions;
 
             $condition = array_merge($condition, [
-                'order_by' => '',
-                'order' => '',
-                'search' => '',
+                'filterRule' => '',
+                'filter' => '',
             ]);
-            $messageError = $this->validator->validate($condition, $request);
+
+            $messageError = $this->validator->validate($condition, $this->request);
             if ($messageError) return $this->sendError($messageError);
 
-            $conditionQuery = "defaultAdmin is Null Or defaultAdmin = ''";
+            $conditionQuery = "defaultAdmin is NULL OR defaultAdmin = ''";
             $conditionParams = [];
 
-            $search = $request->get('search');
-            if ($search) {
-                foreach ($search as $key => $value) {
-                    $conditionName = $key . " LIKE '%" . $value . "%'";
-                    $conditionQuery .= ' AND ' . $conditionName;
+            $filterRule = $this->request->get('filterRule');
+            $filter = $this->request->get('filter');
+
+            if ($filterRule && $filter) {
+                $arrQuery = $this->getQueryCondition($filterRule, $filter);
+
+                if ($arrQuery['query']) {
+                    $conditionQuery .= ' AND (' . $arrQuery['query'] . ')';
+                    $conditionParams = array_merge($conditionParams, $arrQuery['params']);
                 }
             }
 
-            $order_by = $request->get('order_by', 'name');
-            $order = $request->get('order', 'desc');
+            $orderKey = $this->request->get('order_by');
+            $order = $this->request->get('order');
+            if (empty($orderKey)) $orderKey = 'id';
+            if (empty($order)) $order = 'desc';
 
             $list = new User\Listing();
             $list->setCondition($conditionQuery, $conditionParams);
-            $list->setOrderKey($order_by);
+            $list->setOrderKey($orderKey);
             $list->setOrder($order);
 
-            $paginationData = $this->helperPaginator($paginator, $list, $page, $limit);
-            $data = array_merge(
-                [
-                    'totalItems' => $list->count(),
-                    'data' => [],
-                ],
-                $paginationData,
-            );
+            $paginationData = $this->paginator($list, $page, $limit);
+            $data = [
+                'data' => [],
+                'paginationData' => $paginationData->getPaginationData(),
+            ];
 
-            foreach ($list as $item) {
-                $data['data'][] = self::listingResponse($item);
+            foreach ($paginationData as $item) {
+                $data['data'][] = UserServices::getJson($item);
             }
 
             return $this->sendResponse($data);
@@ -89,26 +75,115 @@ class UserController extends BaseController
     }
 
     /**
-     * @Route("/detail", name="api_user_detail", methods={"GET"})
-     *
-     * {mô tả api}
-     *
-     * @param Cache $cache
-     *
-     * @return JsonResponse
-     *
-     * @throws \Exception
+     * @Route("/add", name="corepulse_api_user_add", methods={"POST"})
      */
-    public function detailAction( Request $request ): JsonResponse {
+    public function add()
+    {
+        try {
+            $condition = [
+                'username' => 'required|whitespace|regex:^[a-zA-Z0-9]+$',
+                'password' => 'required|length:min,8,max,70',
+            ];
+    
+            $errorMessages = $this->validator->validate($condition, $this->request);
+            if ($errorMessages) return $this->sendError($errorMessages);
+    
+            $params = [
+                'username' => $this->request->get('username'),
+                'password' => $this->request->get('password')
+            ];
+            
+            $user = UserServices::create($params);
+            
+            if ($user){
+                $data = [
+                    'success' => true, 
+                    'message' => 'User create success.',
+                    'data' => UserServices::getJson($user),
+                ];
+                return $this->sendResponse($data);
+            }
+
+            return $this->sendError('Create failed');
+        } catch (\Throwable $th) {
+            return $this->sendError($th->getMessage());
+        }
+    }
+
+    /**
+     * @Route("/delete", name="corepulse_api_user_delete", methods={"GET"})
+     */
+    public function delete(): JsonResponse {
         try {
             $condition = [
                 'id' => 'required',
             ];
 
-            $errorMessages = $this->validator->validate($condition, $request);
+            $errorMessages = $this->validator->validate($condition, $this->request);
             if ($errorMessages) return $this->sendError($errorMessages);
 
-            $id = $request->get('id');
+            $ids = $this->request->get('id');
+            if (is_array($ids)) {
+                foreach ($ids as $id) {
+                    $user = User::getById((int) $id);
+                    if ($user) {
+                        $user->delete();
+                    } else {
+                        return $this->sendError(['message' => "Can not find user to be deleted"]);
+                    }
+                }
+            } else {
+                $user = User::getById((int) $ids);
+                if ($user) {
+                    $user->delete();
+                } else {
+                    return $this->sendError(['message' => "Can not find user to be deleted"]);
+                }
+            }
+
+            return $this->sendResponse([ 'success' => true, 'message' => "Delete page success"]);
+        } catch (\Exception $e) {
+            return $this->sendError($e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * @Route("/detail/{id}", name="corepulse_api_user_detail", methods={"GET", "POST"})
+     */
+    public function detail(): JsonResponse {
+        try {
+            $condition = [
+                'id' => 'required',
+            ];
+
+            $errorMessages = $this->validator->validate($condition, $this->request);
+            if ($errorMessages) return $this->sendError($errorMessages);
+
+            $id = $this->request->get('id');
+            $user = User::getById($id);
+
+            if (!$user) return $this->sendResponse([ 'success' => false, 'message' => "User not found"]);
+
+            if ($this->request->isMethod(Request::METHOD_POST)) {
+                $condition = [
+                    'setting' => 'json',
+                    'assets' => 'json',
+                    'documents' => 'json',
+                    'objects' => 'json',
+                ];
+    
+                $errorMessages = $this->validator->validate($condition, $this->request);
+                if ($errorMessages) return $this->sendError($errorMessages);
+    
+                try {
+                    $params = UserServices::handleParams($this->request->request->all());
+                    $update = UserServices::edit($params, $user);
+    
+                    return $this->sendResponse(['success' => true, 'message' => 'User update success.']);
+                } catch (\Throwable $th) {
+                    return $this->sendError(['success' => false, 'message' => $th->getMessage()]);
+                }
+            }
 
             $listRole = new Role\Listing();
             $roles = [];
@@ -119,52 +194,35 @@ class UserController extends BaseController
                 ];
             }
 
-            $user = User::getById($id);
+            $permission = $user->getPermission() ? json_decode($user->getPermission(), true) : [
+                'documents' => [], 
+                'assets' => [], 
+                'objects' => [], 
+                'other' => [],
+            ];
 
-            // Lấy quyền của role và quyền của user
-            $rolePermission = $user->getRole() ? Role::getById($user->getRole()) ? json_decode(Role::getById($user->getRole())->getPermission(), true) : [] : [];
-            $userPermission = $user->getPermission() ? json_decode($user->getPermission(), true) : [];
-            if ($rolePermission == null) {
-                $rolePermission = [];
-            }
-            // xử lý gộp quyền
-            $mergedArray = array_merge($rolePermission, $userPermission);
-            $uniqueRole = array_unique($mergedArray);
-            $permission = array_values($uniqueRole);
-            $splitArrPermission = RoleServices::splitPermission($permission);
-
-            $data['data']['user'] = [
+            $data['user'] = [
                 'id' => $user->getId(),
                 'name' => $user->getName(),
                 'email' => $user->getEmail(),
                 'username' => $user->getUsername(),
                 'role' => $user->getRole(),
                 'active' => $user->getActive(),
-                // 'accessibleData' => $user->getAccessibleData(),
+                'password' => '',
                 'permission' => $permission,
-                'splitArrPermission' => $splitArrPermission,
-                'rolePermission' => $rolePermission,
             ];
 
-            $data['data']['roles'] = $roles;
+            $data['roles'] = $roles;
 
             return $this->sendResponse($data);
 
         } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
     /**
      * @Route("/profile", name="api_user_profile", methods={"GET"})
-     *
-     * {mô tả api}
-     *
-     * @param Cache $cache
-     *
-     * @return JsonResponse
-     *
-     * @throws \Exception
      */
     public function getProfile(Request $request): JsonResponse
     {
@@ -184,14 +242,6 @@ class UserController extends BaseController
 
     /**
      * @Route("/edit-profile", name="api_user_edit_profile", methods={"GET"})
-     *
-     * {mô tả api}
-     *
-     * @param Cache $cache
-     *
-     * @return JsonResponse
-     *
-     * @throws \Exception
      */
     public function editProfile(Request $request): JsonResponse
     {
@@ -230,14 +280,6 @@ class UserController extends BaseController
 
     /**
      * @Route("/edit-password", name="api_user_edit_password", methods={"GET"})
-     *
-     * {mô tả api}
-     *
-     * @param Cache $cache
-     *
-     * @return JsonResponse
-     *
-     * @throws \Exception
      */
     public function editPassword(Request $request): JsonResponse
     {
@@ -270,23 +312,6 @@ class UserController extends BaseController
         } catch (\Exception $e) {
             return $this->sendError($e->getMessage(), 500);
         }
-    }
-
-    // Trả ra dữ liệu
-    public function listingResponse($item)
-    {
-        $activeValue = $item->getActive() ? "Active" : "Inactive";
-        $json[] = [
-            'id' => $item->getId(),
-            'name' => $item->getName(),
-            'username' => $item->getUsername(),
-            'email' => $item->getEmail(),
-            'active' => $activeValue,
-            // 'permission' => json_decode($item->getPermission()),
-            // 'role' => $item->getRole()?->getName()
-        ];
-
-        return $json;
     }
 
     public function infoUser($user)

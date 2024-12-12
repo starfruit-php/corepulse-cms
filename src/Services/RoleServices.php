@@ -3,35 +3,12 @@
 namespace CorepulseBundle\Services;
 
 use CorepulseBundle\Model\Role;
-use Pimcore\Model\DataObject\Service as DataObjectService;
 
 class RoleServices
 {
-    public static function create($key)
+    public static function create($params)
     {
         $role = new Role;
-        $role->setKey(\Pimcore\Model\Element\Service::getValidKey($key . '-' . time(), 'object'));
-        DataObjectService::createFolderByPath("/Role");
-        $role->setParent(\Pimcore\Model\DataObject::getByPath("/Role"));
-        // dd($params);
-        // foreach ($params as $key => $value) {
-        //     if ($key != 'permission') {
-        //         $setValue = 'set' . ucfirst($key);
-        //         if (method_exists($role, $setValue)) {
-        //             $role->$setValue($value);
-        //         }
-        //     } else {
-        //         $role->setPermission(json_encode($value));
-        //     }
-        // }
-        $role->setName($key);
-        $role->setPublished(true);
-
-        return $role;
-    }
-
-    public static function edit($params, $role)
-    {
         foreach ($params as $key => $value) {
             if ($key != 'permission') {
                 $setValue = 'set' . ucfirst($key);
@@ -39,8 +16,7 @@ class RoleServices
                     $role->$setValue($value);
                 }
             } else {
-                $permission = explode(",", $value);
-                $role->setPermission(json_encode($permission));
+                $role->setPermission(json_encode($value));
             }
         }
         $role->save();
@@ -48,43 +24,76 @@ class RoleServices
         return $role;
     }
 
-    public static function delete($id)
+    public static function edit($params, $role)
     {
-        if (is_array($id)) {
-            foreach ($id as $i) {
-                $role = Role::getById($i);
-                $role->delete();
+        foreach ($params as $key => $value) {
+            switch ($key) {
+                case 'permission':
+                    $role->setPermission(json_encode($value));
+                    break;
+                default:
+                    $setValue = 'set' . ucfirst($key);
+                    if (method_exists($role, $setValue)) {
+                        $role->$setValue($value);
+                    }
+                    break;
             }
-        } else {
-            $role = Role::getById($id);
-            $role->delete();
         }
+        
+        $role->save();
 
-        return true;
+        return $role;
     }
 
-    public static function splitPermission($permission)
+    public static function handleParams($params = [])
     {
-        $doc = [];
-        $obj = [];
-        $assets = [];
-        if ($permission) {
-            foreach ($permission as $value) {
-                if (strstr($value, 'homeDocument')) {
-                    array_push($doc, $value);
-                }
-                if (strstr($value, 'assets')) {
-                    array_push($assets, $value);
-                }
-                if (strstr($value, 'Object')) {
-                    array_push($obj, $value);
+        $data = [];
+        if (isset($params['name'])) {
+            $data = [
+                'name' => $params['name'],
+            ];
+        } else {
+            $configPermissions = ['documents', 'assets', 'objects', 'other'];
+            $dataPermissions = [
+                'documents' => [], 
+                'assets' => [], 
+                'objects' => [], 
+                'other' => [],
+            ];
+    
+            foreach ($configPermissions as $item) {
+                if (isset($params[$item])) {
+                    $valueItem = $params[$item];
+                    $valueItem = json_decode($valueItem, true);
+    
+                    if ($valueItem) {
+                        $valueItem = array_map(function ($convert, $index) {
+                            if (is_array($convert)) {
+                                $convert['id'] = (int)$index + 1;
+                            }
+                            
+                            return $convert;
+                        }, $valueItem, array_keys($valueItem));
+                        $dataPermissions[$item] = $valueItem;
+                    }
                 }
             }
+    
+            $setting = isset($params['setting']) ? json_decode($params['setting'], true) : [];
+    
+            $data = array_merge($setting, ['permission' => $dataPermissions]);
         }
-        $splitArrPermission['document'] = $doc;
-        $splitArrPermission['object'] = $obj;
-        $splitArrPermission['assets'] = $assets;
 
-        return $splitArrPermission;
+        return $data;
+    }
+
+    public static function getJson($item)
+    {
+        $data = [
+            'id' => $item->getId(),
+            'name' => $item->getName(),
+        ];
+
+        return $data;
     }
 }

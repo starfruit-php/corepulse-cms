@@ -3,22 +3,20 @@
 namespace CorepulseBundle\Controller\Api;
 
 use CorepulseBundle\Services\DocumentServices;
-use CorepulseBundle\Services\FieldServices;
-use Pimcore\Translation\Translator;
-use Symfony\Component\HttpFoundation\RequestStack;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
-use Knp\Component\Pager\PaginatorInterface;
 use Pimcore\Model\Asset;
 use Pimcore\Model\Document;
-use DateTime;
+use Pimcore\Controller\Config\ControllerDataProvider;
 use Pimcore\Model\Document\DocType;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Pimcore\Model\Tool;
 use Pimcore\Document\Editable\EditmodeEditableDefinitionCollector;
 use Pimcore\Document\Renderer\DocumentRenderer;
+use Symfony\Component\HttpKernel\Fragment\FragmentRendererInterface;
+use Pimcore\Templating\Renderer\ActionRenderer;
+use Symfony\Bridge\Twig\Attribute\Template;
 
 /**
  * @Route("/document")
@@ -129,6 +127,16 @@ class DocumentController extends BaseController
             $document = Document::getById($id);
             if ($document) {
                 if($this->request->isMethod(Request::METHOD_POST)) {
+                    $setting = $this->request->get('setting');
+                    if ($setting) {
+                        $setting = json_decode($setting, true);
+                        foreach ($setting as $key => $value) {
+                            $document = DocumentServices::processSetting($document, $key, $value);
+                            if (!$document instanceof Document) {
+                                return $this->sendResponse(['success' => false, 'message' => $document['name'] . ': ' . $document['error']]);
+                            }
+                        }
+                    }
                     $params = $this->request->get('data');
                     if ($params) {
                         $params = json_decode($params, true);
@@ -138,10 +146,11 @@ class DocumentController extends BaseController
                                 return $this->sendResponse(['success' => false, 'message' => $document['name'] . ': ' . $document['error']]);
                             }
                         }
-                        $document->setPublished($this->request->get('_publish') === 'publish');
-                        $document->save();
-                        return $this->sendResponse(['success' => true, 'message' => "Update document success"]);
                     }
+
+                    $document->setPublished($this->request->get('_publish') === 'publish');
+                    $document->save();
+                    return $this->sendResponse(['success' => true, 'message' => "Update document success"]);
                 }
 
                 $sidebar = DocumentServices::getSidebar($document);
@@ -165,20 +174,146 @@ class DocumentController extends BaseController
     }
 
     /**
+     * @Route("/options", name="corepulse_api_document_option", methods={"POST"})
+     */
+    public function options()
+    {
+        try {
+            $condition = [
+                'id' => 'required',
+                'config' => 'required',
+            ];
+
+            $messageError = $this->validator->validate($condition, $this->request);
+            if ($messageError) return $this->sendError($messageError);
+
+            $document = Document::getById((int) $this->request->get('id'));
+
+            if (!$document) return $this->sendResponse([ 'success' => false, 'message' => "Document not found"]);
+
+            $data = [];
+            $config = $this->request->get('config');
+            if ($config) {
+                $config = json_decode($config, true);
+
+                $data = DocumentServices::getOption($config);
+            } else {
+                $data = DocumentServices::getOption([]);
+            }
+
+            return $this->sendResponse($data);
+        } catch (\Exception $e) {
+            return $this->sendResponse([]);
+            // return $this->sendError($e->getMessage());
+        }
+    }
+
+    /**
      * @Route("/edit-mode", name="corepulse_api_document_edit_mode", methods={"GET"})
      */
-    public function editModeAction(EditmodeEditableDefinitionCollector $definitionCollector, DocumentRenderer $documentRenderer)
+    public function editModeAction(ActionRenderer $actionRenderer, EditmodeEditableDefinitionCollector $definitionCollector, DocumentRenderer $documentRenderer, FragmentRendererInterface $fragmentRenderer)
     {
+        $condition = [
+            'id' => 'required',
+        ];
+
+        $errorMessages = $this->validator->validate($condition, $this->request);
+        if ($errorMessages) return $this->sendError($errorMessages);
+        
         $document = Document::getById((int) $this->request->get('id'));
-        // $res = $this->renderView($document->getTemplate(), ['editmode' => true, 'document' => $document]);
-        // dd($document, $definitionCollector->getDefinitions());
+
+        if (!$document) return $this->sendResponse([ 'success' => false, 'message' => "Document not found"]);
+
+        list($class, $action) = explode('::', $document->getController());
+
+        try {
+            $reflector = new \ReflectionClass($class);
+            $method = $reflector->getMethod($action);
+
+            $template = $this->filterAttributeTemplate($method);
+            if (!$template) {
+                $template = $this->filterRenderTemplate($method);
+            }
+            
+            return $this->render($template, [
+                'editmode' => true
+            ]);
+        } catch (\Throwable $th) {
+            //throw $th;
+        }
+        
         if ($document->getTemplate()) {
             return $this->render($document->getTemplate(), [
                 'editmode' => true
             ]);
-        } else {
-            return $this->forward($document->getController());
         }
+
+        return $this->forward($document->getController());
+    }
+
+    public function filterAttributeTemplate($method)
+    {
+        $attributes = $method->getAttributes(Template::class);
+        if (!empty($attributes)) {
+            // Lấy giá trị từ Attribute Template
+            $templateAttribute = $attributes[0];
+            $templateArguments = $templateAttribute->getArguments();
+        
+            $template = $templateArguments[0] ?? null;
+        
+            return $template;
+        }
+
+        return null;
+    }
+
+    public function filterRenderTemplate($method)
+    {
+        
+        $file = $method->getFileName();
+        $startLine = $method->getStartLine();
+        $endLine = $method->getEndLine();
+        
+        $source = file($file);
+        $code = implode("", array_slice($source, $startLine - 1, $endLine - $startLine + 1));
+        
+        $tokens = token_get_all("<?php\n" . $code);
+        $lastRenderTemplate = null;
+
+        for ($i = 0; $i < count($tokens); $i++) {
+            // Tìm câu lệnh `return $this->render`
+            if (
+                is_array($tokens[$i]) &&
+                $tokens[$i][0] === T_RETURN &&
+                isset($tokens[$i + 1]) &&
+                is_array($tokens[$i + 1]) &&
+                $tokens[$i + 1][0] === T_WHITESPACE &&
+                isset($tokens[$i + 2]) &&
+                is_array($tokens[$i + 2]) &&
+                $tokens[$i + 2][1] === '$this' &&
+                isset($tokens[$i + 3]) &&
+                is_array($tokens[$i + 3]) &&
+                $tokens[$i + 3][1] === '->render'
+            ) {
+                // Tìm template trong `render(...)`
+                $j = $i + 4;
+                while (isset($tokens[$j])) {
+                    if ($tokens[$j] === '(') {
+                        if (isset($tokens[$j + 1]) && is_array($tokens[$j + 1]) && $tokens[$j + 1][0] === T_CONSTANT_ENCAPSED_STRING) {
+                            $lastRenderTemplate = trim($tokens[$j + 1][1], "'\"");
+                            break;
+                        }
+                    }
+                    $j++;
+                }
+            }
+        }
+
+        if ($lastRenderTemplate) {
+            return $lastRenderTemplate;
+        }
+
+        return null;
     }
 
     /**
@@ -321,26 +456,6 @@ class DocumentController extends BaseController
             }
         }
 
-        // get document type
-        $listDocType = new DocType\Listing();
-        if ($type = $document->getType()) {
-            if (!Document\Service::isValidType($type)) {
-                throw new BadRequestHttpException('Invalid type: ' . $type);
-            }
-            $listDocType->setFilter(static function (DocType $docType) use ($type) {
-                return $docType->getType() === $type;
-            });
-        }
-        $docTypes = [];
-        $lisDocType = [];
-        foreach ($listDocType->getDocTypes() as $type) {
-            $docTypes[] = [
-                'id' => $type->getObjectVars()['id'],
-                'name' => $type->getObjectVars()['name'],
-            ];
-            $lisDocType[] = $type->getObjectVars();
-        }
-
         // nếu page là dạng email
         $listEmail = [];
         if ($document->getType() == "email") {
@@ -375,35 +490,108 @@ class DocumentController extends BaseController
             }
         }
 
-        $href = '';
-        // nếu page là dạng link
-        if ($document->getType() == 'link') {
-            $href = $document->getHref();
-        }
-
         $json = [
-            'id' => $document->getId() ?? '',
-            'title' => method_exists($document, 'getTitle') ? $document->getTitle() : $document->getKey(),
-            'imageSeo' => $seoImage,
-            'prettyUrl' =>  method_exists($document, 'getPrettyUrl') ?  $document->getPrettyUrl() : '',
-            'description' => method_exists($document, 'getDescription') ? $document->getDescription() : '',
-            'controller' => method_exists($document, 'getController') ? $document->getController() : '',
-            'path' => method_exists($document, 'getPath') ? $document->getPath() : '',
-            'key' => method_exists($document, 'getKey') ? $document->getKey() : '',
-            'type' => method_exists($document, 'getType') ? $document->getType() : '',
-            'subject' =>  method_exists($document, 'getSubject') ?  $document->getSubject() : '',
-            'from' =>  method_exists($document, 'getFrom') ?  $document->getFrom() : '',
-            'replyTo' =>  method_exists($document, 'getReplyTo') ?  $document->getReplyTo() : '',
-            'to' =>  method_exists($document, 'getTo') ?  $document->getTo() : '',
-            'cc' =>  method_exists($document, 'getCc') ?  $document->getCc() : '',
-            'bcc' =>  method_exists($document, 'getBcc') ?  $document->getBcc() : '',
-            'docTypes' => $docTypes,
-            'docType' => '',
-            'lisDocType' => $lisDocType,
-            'listEmail' => $listEmail,
-            'href' => $href,
+            'image' => $seoImage,
+            'listEmail' => $listEmail
         ];
 
+        $params = ['id', 'title', 'prettyUrl', 'description', 'controller', 'template', 'path', 'key', 
+                'type', 'subject', 'from', 'replyTo', 'to', 'cc', 'bcc', 'href'];
+
+        foreach ($params as $item) {
+            $method = "get" . ucfirst($item);
+            if (method_exists($document, $method)) {
+                $json[$item] = $document->$method();
+            }
+        }
+
         return $json;
+    }
+
+    /**
+     * @Route("/get-controller", name="corepulse_api_document_get_controller", methods={"GET"})
+     *
+     * @param ControllerDataProvider $provider
+     *
+     * @return JsonResponse
+     */
+    public function getControllerReferences(ControllerDataProvider $provider): JsonResponse
+    {
+        $controllerReferences = $provider->getControllerReferences();
+
+        $result = array_map(function ($controller) {
+            return [
+                'key' => $controller,
+                'label' => $controller,
+                'value' => $controller,
+            ];
+        }, $controllerReferences);
+
+        return $this->sendResponse(['data' => $result]);
+    }
+
+    /**
+     * @Route("/get-document-list-type", name="corepulse_api_document_get_document_list_type", methods={"GET"})
+     */
+    public function getDocumentListType()
+    {
+        $condition = [
+            'id' => 'required',
+        ];
+
+        $errorMessages = $this->validator->validate($condition, $this->request);
+        if ($errorMessages) return $this->sendError($errorMessages);
+
+        $document = Document::getById($this->request->get('id'));
+
+        if (!$document) return $this->sendResponse([ 'success' => false, 'message' => "Document not found"]);
+
+        // get document type
+        $listDocType = new DocType\Listing();
+        if ($type = $document->getType()) {
+            if (!Document\Service::isValidType($type)) {
+                throw new BadRequestHttpException('Invalid type: ' . $type);
+            }
+            $listDocType->setFilter(static function (DocType $docType) use ($type) {
+                return $docType->getType() === $type;
+            });
+        }
+
+        $result = [];
+        foreach ($listDocType->getDocTypes() as $type) {
+            $dataItem = $type->getObjectVars();
+
+            $result[] = array_merge($dataItem, [
+                'key' => $dataItem['name'], 
+                'label' => $dataItem['name'],
+                'value' => $dataItem['id']
+            ]);
+        }
+
+        return $this->sendResponse(['data' => $result]);
+    }
+
+    /**
+     * @Route("/get-templates", name="corepulse_api_document_get_templates", methods={"GET"})
+     *
+     * @param ControllerDataProvider $provider
+     *
+     * @return JsonResponse
+     */
+    public function getTemplates(ControllerDataProvider $provider): JsonResponse
+    {
+        $templates = $provider->getTemplates();
+
+        sort($templates, SORT_NATURAL | SORT_FLAG_CASE);
+
+        $result = array_map(static function ($template) {
+            return [
+                'key' => $template,
+                'label' => $template,
+                'value' => $template,
+            ];
+        }, $templates);
+
+        return $this->sendResponse(['data' => $result]);
     }
 }

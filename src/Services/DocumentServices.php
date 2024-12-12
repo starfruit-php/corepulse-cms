@@ -2,12 +2,12 @@
 
 namespace CorepulseBundle\Services;
 
-use CorepulseBundle\Controller\Cms\FieldController;
-use Pimcore\Db;
-use DateTime;
+use CorepulseBundle\Services\ClassServices;
+use Pimcore\Model\DataObject;
 use Pimcore\Model\Document;
 use Pimcore\Model\Asset;
 use Pimcore\Model\User as AdminUser;
+use Pimcore\Db;
 
 class DocumentServices
 {
@@ -22,6 +22,23 @@ class DocumentServices
         return reset($select);
     }
 
+    static public function processSetting($document, $key, $value)
+    {
+        $params = ['controller', 'template', 'prettyUrl', 'title', 'description'];
+        try {
+            if (in_array($key, $params)) {
+                $method = "set" . ucfirst($key);
+                if (method_exists($document, $method)) {
+                    $document->$method($value);
+                }
+            }
+        
+            return $document;
+        } catch (\Throwable $th) {
+            $param['error'] = $th->getMessage();
+            return $param;
+        }
+    }
     static public function processField($document, $param) 
     {
         if(self::checkBlockName($param['name'])) return $document;
@@ -302,7 +319,7 @@ class DocumentServices
                 $subtype = $document->getEditable($keyBlockT)->getSubtype();
                 $contentField = [
                     0 => ($subtype != "document" || $subtype != "asset") ? "DataObject" : $subtype,
-                    1 =>$document->getEditable($keyBlockT)->getElement()?->getClassName(),
+                    1 => $document->getEditable($keyBlockT)->getElement()?->getClassName(),
                     2 => $document->getEditable($keyBlockT)->getId(),
                 ];
                 // dd($contentField);
@@ -333,48 +350,162 @@ class DocumentServices
         return $list;
     }
 
-    static public function getOptions($type, $arrTypes)
+    static public function getOption($config)
+    {
+        $data = [];
+        $allType = isset($config['types']) ? $config['types'] : ['asset', 'object', 'document'];
+
+        $subtypes = isset($config['subtypes']) ? $config['subtypes'] : [];
+        
+        if (in_array('asset', $allType)) {
+            $listAsset = isset($subtypes['asset']) ? $subtypes['asset'] : ['archive', 'image', 'audio', 'document', 'text', 'folder', 'video', 'unknown'];
+
+            $data[] = self::getRelationType(ClassServices::KEY_ASSET, $listAsset);
+        }
+
+        if (in_array('document', $allType)) {
+            $listDocument = isset($subtypes['document']) ? $subtypes['document'] :  ['email', 'link', 'hardlink', 'snippet', 'folder', 'page'];
+
+            $data[] = self::getRelationType(ClassServices::KEY_DOCUMENT, $listDocument);
+        }
+
+        if (in_array('object', $allType)) {
+            $listObject = isset($config['classes']) ? $config['classes'] : self::getClassList(["user", "role"]);
+            $subObject = isset($subtypes['object']) ? $subtypes['object'] : ['object', 'variant', 'folder'];
+
+            $data[] = self::getRelationType( ClassServices::KEY_OBJECT, $listObject, $subObject);
+        }
+
+        return $data;
+    }
+
+    // danh sách các options theo type
+    static public function getRelationType($type, $listKey, $subObject = null)
+    {
+        $options = [
+            'label' => $type,
+            'value' => $type,
+        ];
+
+        foreach ($listKey as $value) {
+            $children = self::getRelationData($value, $type, $subObject);
+            if (count($children)) {
+                $datas = [
+                    'label' => $value,
+                    'value' => $value,
+                    'children' => $children,
+                ];
+
+                $options['children'][] = $datas;
+            }
+        }
+        
+        return $options;
+    }
+
+    //type : loại trường đc cấu hình; model : asset, object , document
+    public static function getRelationData($type, $model, $subtypeObject = null)
+    {
+        $data = [];
+        $listing = '';
+        $modelName = '';
+
+        try {
+            if ($model == ClassServices::KEY_OBJECT) {
+                if ($type != 'All' && $type != 'folder') {
+                    $modelName = "Pimcore\\Model\\" . $model . "\\" . $type . '\Listing';
+                } else {
+                    $modelName = "Pimcore\\Model\\" . $model . '\Listing';
+                }
+            } else {
+                $modelName = "Pimcore\\Model\\" . $model . '\Listing';
+            }
+
+            $listing = new $modelName();
+            if ($listing) {
+                // if ($model != 'Asset') {
+                //     $listing->setUnpublished(true);
+                // }
+
+                if ($model !== ClassServices::KEY_OBJECT && $type != 'All' || ($model == ClassServices::KEY_OBJECT && $type == 'folder')) {
+                    $listing->setCondition('type = ?', [$type]);
+                }
+
+                if ($model == ClassServices::KEY_OBJECT && $type != 'All' && $type != 'folder' && !empty($subtypeObject)) {
+                    $listing->setObjectTypes($subtypeObject);
+                }
+
+                foreach ($listing as $item) {
+                    $key = ($model == ClassServices::KEY_ASSET) ? $item->getFilename() : $item->getKey();
+
+                    $data[] = [
+                        'key' => $key,
+                        'value' => $item->getId(),
+                        'type' => $model,
+                        'label' => $key,
+                        // 'label' => $item->getFullPath(),
+                    ];
+                }
+            }
+
+            return $data;
+        } catch (\Throwable $th) {
+            return $data;
+        }
+    }
+
+    static public function getOptions($type, $layoutDefinition, $object = null)
     {
         $options = [];
         $allowedFieldTypes = ['manyToOneRelation', 'manyToManyRelation', 'advancedManyToManyRelation'];
 
         if (in_array($type, $allowedFieldTypes)) {
+            if ($layoutDefinition->getObjectsAllowed()) {
+                $classes = $layoutDefinition->getClasses();
+                $blackList = ["user", "role"];
+                $listObject = self::getClassList($blackList);
 
-            if (!$arrTypes) {
-                $arrTypes = [
-                    'object' => [],
-                    'document' => [],
-                    'asset' => [],
-                ];
+                $options[] = self::getRelationType($classes, ClassServices::KEY_OBJECT, 'classes', $listObject);
             }
 
-            foreach ($arrTypes as $key => $value) {
-                if ($key == 'object') {
-                    $classes = $value;
-                    $blackList = ["user", "role"];
-                    $listObject = FieldController::getClassList($blackList);
+            if ($layoutDefinition->getDocumentsAllowed()) {
+                $document = $layoutDefinition->getDocumentTypes();
+                $listDocument = ['email', 'link', 'hardlink', 'snippet', 'folder', 'page'];
 
-                    $options[] = FieldController::getRelationType($classes, self::KEY_OBJECT, 'classes', $listObject);
-                }
-
-                if ($key == 'document') {
-                    $document = $value;
-                    $listDocument = ['email', 'link', 'hardlink', 'snippet', 'folder', 'page'];
-
-                    $options[] = FieldController::getRelationType($document, self::KEY_DOCUMENT, 'documentTypes', $listDocument);
-                }
-
-                if ($key == 'asset') {
-                    $asset = $value;
-                    $listAsset = ['archive', 'image', 'audio', 'document', 'text', 'folder', 'video', 'unknown'];
-
-                    $options[] = FieldController::getRelationType($asset, self::KEY_ASSET, 'assetTypes', $listAsset);
-                }
+                $options[] = self::getRelationType($document, ClassServices::KEY_DOCUMENT, 'documentTypes', $listDocument);
             }
 
+            if ($layoutDefinition->getAssetsAllowed()) {
+                $asset = $layoutDefinition->getAssetTypes();
+                $listAsset = ['archive', 'image', 'audio', 'document', 'text', 'folder', 'video', 'unknown'];
+
+                $options[] = self::getRelationType($asset, ClassServices::KEY_ASSET, 'assetTypes', $listAsset);
+            }
+        }
+
+        $allowedObjectTypes = ['manyToManyObjectRelation', 'advancedManyToManyObjectRelation'];
+        if (in_array($type, $allowedObjectTypes)) {
+            $classes = $layoutDefinition->getClasses();
+            $blackList = ["user", "role"];
+            $listObject = self::getClassList($blackList);
+
+            $options[] = self::getRelationType($classes, ClassServices::KEY_OBJECT, 'classes', $listObject);
         }
 
         return $options;
+    }
+
+    // danh sách các classes
+    static public function getClassList($blackList)
+    {
+        $query = 'SELECT * FROM `classes` WHERE id NOT IN ("' . implode('","', $blackList) . '")';
+        $classListing = Db::get()->fetchAllAssociative($query);
+        $data = [];
+        foreach ($classListing as $class) {
+            $data[] = $class['name'];
+        }
+
+        return $data;
     }
 
 

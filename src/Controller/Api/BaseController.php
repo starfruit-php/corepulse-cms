@@ -93,7 +93,7 @@ class BaseController extends FrontendController
             }
             if (is_string($error)) {
                 // $error = ["error" => ["message" => $this->translator->trans($error)]];
-                $error = ["error" => ["message" => $error]];
+                $error = ["errors" => ["message" => $error]];
             }
         }
 

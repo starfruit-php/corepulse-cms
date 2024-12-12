@@ -141,6 +141,8 @@ class Block extends AbstractField
         foreach ($value as $key => $item) {
             $i++;
             $blockData[] = $i;
+            if (!is_array($item)) continue;
+            
             foreach ($item as $itemKey => $itemValue) {
                 $fd = ArrayHelper::filterData($config, 'realName', $itemKey, true);
                 if (empty($fd)) {

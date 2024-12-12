@@ -34,27 +34,98 @@ class UserServices
         return $user;
     }
 
+    public static function settingEdit($params, $user)
+    {
+        $user->setActive(1);
+        $user->setPassword(CorepulseUserPasswordHasher::getPasswordHash($params['username'], $params['password']));
+        $user->setUsername($params['username']);
+        $user->save();
+
+        return $user;
+    }
+
     public static function edit($params, $user)
     {
-        if (array_key_exists('password', $params)) {
-            $user->setActive(1);
-            $user->setPassword(CorepulseUserPasswordHasher::getPasswordHash($params['username'], $params['password']));
-        } else {
-            foreach ($params as $key => $value) {
-                if ($key != 'permission') {
+        foreach ($params as $key => $value) {
+            switch ($key) {
+                case 'password':
+                    if ($value) {
+                        $user->setPassword(CorepulseUserPasswordHasher::getPasswordHash(isset($params['username']) ? $params['username'] : $user->getUsername(), $params['password']));
+                    }
+                    break;
+                case 'permission':
+                    $user->setPermission(json_encode($value));
+                    break;
+                default:
                     $setValue = 'set' . ucfirst($key);
                     if (method_exists($user, $setValue)) {
                         $user->$setValue($value);
                     }
-                } else {
-                    $permission = explode(",", $value);
-                    $user->setPermission(json_encode($permission));
-                }
+                    break;
             }
         }
+        
         $user->save();
 
         return $user;
+    }
+
+    public static function getJson($item)
+    {
+        $activeValue = $item->getActive() ? "Active" : "Inactive";
+        $data = [
+            'id' => $item->getId(),
+            'name' => $item->getName(),
+            'username' => $item->getUsername(),
+            'email' => $item->getEmail(),
+            'active' => $activeValue,
+            // 'permission' => json_decode($item->getPermission()),
+            // 'role' => $item->getRole()?->getName()
+        ];
+
+        return $data;
+    }
+
+    public static function handleParams($params = [])
+    {
+        $data = [];
+        if (isset($params['username'])) {
+            $data = [
+                'username' => $params['username'],
+            ];
+        } else {
+            $configPermissions = ['documents', 'assets', 'objects', 'other'];
+            $dataPermissions = [
+                'documents' => [], 
+                'assets' => [], 
+                'objects' => [], 
+                'other' => [],
+            ];
+    
+            foreach ($configPermissions as $item) {
+                if (isset($params[$item])) {
+                    $valueItem = $params[$item];
+                    $valueItem = json_decode($valueItem, true);
+    
+                    if ($valueItem) {
+                        $valueItem = array_map(function ($convert, $index) {
+                            if (is_array($convert)) {
+                                $convert['id'] = (int)$index + 1;
+                            }
+                            
+                            return $convert;
+                        }, $valueItem, array_keys($valueItem));
+                        $dataPermissions[$item] = $valueItem;
+                    }
+                }
+            }
+    
+            $setting = isset($params['setting']) ? json_decode($params['setting'], true) : [];
+    
+            $data = array_merge($setting, ['permission' => $dataPermissions]);
+        }
+
+        return $data;
     }
 
     public static function delete($id)

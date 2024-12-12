@@ -175,6 +175,13 @@ function renderType(type, value) {
     case "wysiwyg":
       element.innerHTML = value;
       break;
+    case "relation":
+      element.innerHTML = value?.key;
+      break;
+    case "relations":
+      const convert = value?.map(item => item?.key).join(', ');
+      element.innerHTML = convert;
+      break;
     default:
       element.textContent = `${value}`;
   }

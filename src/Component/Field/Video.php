@@ -5,6 +5,7 @@ namespace CorepulseBundle\Component\Field;
 use Pimcore\Model\Asset;
 use CorepulseBundle\Component\Field\Image;
 use Pimcore\Model\DataObject\Data\Video as DataVideo;
+use Pimcore\Model\Document\Editable\Video as DocumentVideo;
 
 class Video extends Image
 {
@@ -91,5 +92,30 @@ class Video extends Image
         }
 
         return $video;
+    }
+
+    public function formatDocumentSave($value)
+    {
+        $editable = $this->getObjectOrDocument()->getEditable($this->getLayout()->name);
+        
+        if (!$editable) {
+            $editable = new DocumentVideo();
+            $editable->setDocument($this->getObjectOrDocument());
+            $editable->setName($this->getLayout()->name);
+            $editable->setRealName($this->getLayout()->realName);
+        }
+        // $allowedTypes = ['asset', 'youtube', 'vimeo', 'dailymotion'];
+        $dataVideo = [
+            'id' => $value['dataId'],
+            'type' => $value['type'],
+            'allowedTypes' => $value['allowedTypes'],
+            'title' => $value['title'],
+            'description' => $value['description'],
+            'path' => $value['path'],
+            'poster' => $value['poster'],
+        ];
+        $editable->setDataFromEditmode($dataVideo);
+       
+        return $editable;
     }
 }

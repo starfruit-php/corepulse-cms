@@ -101,7 +101,6 @@ class ObjectController extends BaseController
 
             $condition = array_merge($condition, [
                 'id' => 'required',
-                'columns' => 'array',
             ]);
             $messageError = $this->validator->validate($condition, $this->request);
             if($messageError) return $this->sendError($messageError);
@@ -114,8 +113,7 @@ class ObjectController extends BaseController
             }
 
             $className = $classValidation['className'];
-            $columns = $classValidation['columns'];
-            $fields = $this->request->get('columns') ? ClassServices::filterFill($columns, $this->request->get('columns')) : $columns;
+            $fields =  $classValidation['columns'];
 
             $locale = $this->request->get('_locale', $this->request->getLocale());
 
@@ -138,10 +136,6 @@ class ObjectController extends BaseController
             $order = $this->request->get('order');
             if (empty($orderKey)) $orderKey = 'key';
             if (empty($order)) $order = 'asc';
-
-            if ($limit == -1) {
-                $limit = 10000;
-            }
 
             $listing = call_user_func_array('\\Pimcore\\Model\\DataObject\\' . $className . '::getList', [["unpublished" => true]]);
             $listing->setCondition($conditionQuery, $conditionParams);
@@ -257,14 +251,6 @@ class ObjectController extends BaseController
 
     /**
      * @Route("/delete", name="corepulse_api_object_delete", methods={"POST"})
-     *
-     * {mô tả api}
-     *
-     * @param Cache $cache
-     *
-     * @return JsonResponse
-     *
-     * @throws \Exception
      */
     public function delete()
     {
@@ -314,14 +300,6 @@ class ObjectController extends BaseController
 
     /**
      * @Route("/add", name="corepulse_api_object_add", methods={"POST"})
-     *
-     * {mô tả api}
-     *
-     * @param Cache $cache
-     *
-     * @return JsonResponse
-     *
-     * @throws \Exception
      */
     public function add()
     {
@@ -395,14 +373,6 @@ class ObjectController extends BaseController
 
     /**
      * @Route("/get-sidebar", name="corepulse_api_object_slider_bar", methods={"GET"})
-     *
-     * {mô tả api}
-     *
-     * @param Cache $cache
-     *
-     * @return JsonResponse
-     *
-     * @throws \Exception
      */
     public function getSidebar()
     {

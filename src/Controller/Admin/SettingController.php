@@ -123,7 +123,7 @@ class SettingController extends BaseController
                     $user->setDefaultAdmin(1);
                 }
 
-                $update = UserServices::edit($params, $user);
+                $update = UserServices::settingEdit($params, $user);
 
                 return $this->sendResponse(['success' => true, 'message' => 'Setting success']);
             }
