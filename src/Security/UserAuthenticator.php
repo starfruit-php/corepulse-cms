@@ -39,7 +39,7 @@ class UserAuthenticator extends AbstractAuthenticator
         if (null === $apiToken) {
             // The token header was empty, authentication fails with HTTP Status
             // Code 401 "Unauthorized"
-            throw new CustomUserMessageAuthenticationException('No API token provided');
+            throw new CustomUserMessageAuthenticationException('authentication.api_invalid_provided',['message' => 'No API token provided']);
         }
 
         // implement your own logic to get the user identifier from `$apiToken`
@@ -47,13 +47,13 @@ class UserAuthenticator extends AbstractAuthenticator
         $verify = Token::verifyToken($apiToken);
 
         if (!$verify) {
-            throw new CustomUserMessageAuthenticationException('Invalid API token');
+            throw new CustomUserMessageAuthenticationException('authentication.invalid_token', ['message' => 'Invalid API token']);
         }
 
         $user = User::getByAuthToken($apiToken);
 
         if (!$user) {
-            throw new CustomUserMessageAuthenticationException('User not found');
+            throw new CustomUserMessageAuthenticationException('authentication.user_not_found', ['message' => 'User not found']);
         }
 
         $userIdentifier = $user->getUsername();
@@ -70,9 +70,11 @@ class UserAuthenticator extends AbstractAuthenticator
 
     public function onAuthenticationFailure(Request $request, AuthenticationException $exception): ?Response
     {
+        $exceptionMessageData = $exception->getMessageData();
         $data = [
             // you may want to customize or obfuscate the message first
-            'message' => strtr($exception->getMessageKey(), $exception->getMessageData())
+            'message' => isset($exceptionMessageData['message']) ? $exceptionMessageData['message'] : $exception->getMessageKey(),
+            'trans' => $exception->getMessageKey(),
 
             // or to translate this message
             // $this->translator->trans($exception->getMessageKey(), $exception->getMessageData())

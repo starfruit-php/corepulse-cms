@@ -4,6 +4,7 @@ namespace CorepulseBundle\Services\Helper;
 
 use Pimcore\Db;
 use Pimcore\Model\DataObject\ClassDefinition;
+use CorepulseBundle\Services\ClassServices;
 
 class SearchHelper
 {
@@ -125,6 +126,21 @@ class SearchHelper
 
         return $listing;
     }
+
+    public static function getTreeCascader($type, $subType)
+    {
+        $config = [
+            'types' => [$type],
+        ];
+
+        $subtypes = [
+            // 'object' => [],
+        ];
+
+        return ClassServices::getCommonOptions($config, $subtypes);
+    }
+
+    
 
     public static function getData($item, $model = 'dataObject')
     {

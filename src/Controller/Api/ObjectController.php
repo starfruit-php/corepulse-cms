@@ -5,14 +5,14 @@ namespace CorepulseBundle\Controller\Api;
 use CorepulseBundle\Services\ClassServices;
 use CorepulseBundle\Services\DataObjectServices;
 use Pimcore\Db;
-use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
-use Knp\Component\Pager\PaginatorInterface;
+use CorepulseBundle\Services\PermissionServices;
 use Pimcore\Model\DataObject;
 use Pimcore\Model\DataObject\ClassDefinition\Data\ManyToManyObjectRelation;
 use Pimcore\Model\DataObject\ClassDefinition\Data\Relations\AbstractRelations;
 use Pimcore\Model\DataObject\ClassDefinition\Data\ReverseObjectRelation;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * @Route("/object")
@@ -41,13 +41,16 @@ class ObjectController extends BaseController
 
             $classId = $this->request->get("id");
 
+            $this->validPermissionOrFail(PermissionServices::TYPE_OBJECTS, $classId, PermissionServices::ACTION_LISTING);
+
             $checkClass = ClassServices::isValid($classId);
 
             if (!$checkClass) {
                 return $this->sendError([
                     'success' => false,
-                    'message' => 'Class not found.'
-                ]);
+                    'message' => 'Class not found.',
+                    "trans" => "object.errors.class.not_found"
+                ], Response::HTTP_FORBIDDEN);
             }
 
             $classConfig = ClassServices::getConfig($classId);
@@ -56,8 +59,9 @@ class ObjectController extends BaseController
             if (!$visibleFields) {
                 return $this->sendError([
                     'success' => false,
-                    'message' => 'Invalid or missing visible fields.'
-                ]);
+                    'message' => 'Invalid or missing visible fields.',
+                    "trans" => "object.errors.class.invalid_or_missing_visible_fields"
+                ], Response::HTTP_FORBIDDEN);
             }
 
             $fields = $visibleFields['fields'];
@@ -106,10 +110,11 @@ class ObjectController extends BaseController
             if($messageError) return $this->sendError($messageError);
 
             $classId = $this->request->get("id");
+            $this->validPermissionOrFail(PermissionServices::TYPE_OBJECTS, $classId, PermissionServices::ACTION_LISTING);
 
             $classValidation = $this->validateClass($classId);
             if (!$classValidation['success']) {
-                return $this->sendError($classValidation);
+                return $this->sendError($classValidation, Response::HTTP_FORBIDDEN);
             }
 
             $className = $classValidation['className'];
@@ -175,13 +180,20 @@ class ObjectController extends BaseController
             // Retrieve object from database
             $id = $this->request->get('id');
             $objectFromDatabase = DataObject\Concrete::getById($id);
-            if (!$objectFromDatabase) return $this->sendError('Object not found');
+            if (!$objectFromDatabase) {
+                return $this->sendError([
+                    'message' => 'Object not found.',
+                    "trans" => "object.errors.detail.not_found"
+                ], Response::HTTP_FORBIDDEN);
+            }
 
             // Validate class
             $classId = $objectFromDatabase->getClassId();
+            $this->validPermissionOrFail(PermissionServices::TYPE_OBJECTS, $classId, PermissionServices::ACTION_VIEW);
+
             $classValidation = $this->validateClass($classId);
             if (!$classValidation['success']) {
-                return $this->sendError($classValidation);
+                return $this->sendError($classValidation, Response::HTTP_FORBIDDEN);
             }
 
             // Handle POST request for updates
@@ -211,9 +223,7 @@ class ObjectController extends BaseController
             ];
 
             $messageError = $this->validator->validate($condition, $this->request);
-            if ($messageError) {
-                return $this->sendError($messageError);
-            }
+            if ($messageError) return $this->sendError($messageError);
 
             $type = $this->request->get('type');
 
@@ -264,10 +274,11 @@ class ObjectController extends BaseController
             if ($errorMessages) return $this->sendError($errorMessages);
 
             $classId = $this->request->get('classId');
-            $classValidation = $this->validateClass($classId);
+            $this->validPermissionOrFail(PermissionServices::TYPE_OBJECTS, $classId, PermissionServices::ACTION_DELETE);
 
+            $classValidation = $this->validateClass($classId);
             if (!$classValidation['success']) {
-                return $this->sendError($classValidation);
+                return $this->sendError($classValidation, Response::HTTP_FORBIDDEN);
             }
 
             $ids = $this->request->get('id');
@@ -280,8 +291,9 @@ class ObjectController extends BaseController
             }
 
             return $this->sendResponse([
-                'success' => true,
-                'message' => "Delete object success."
+                'success' => true, 
+                'message' => "Delete object success",
+                "trans" => "object.success.delete_success"
             ]);
         } catch (\Exception $e) {
             return $this->sendError($e->getMessage());
@@ -294,7 +306,11 @@ class ObjectController extends BaseController
         if ($object) {
             $object->delete();
         } else {
-            return $this->sendError("Can not find object $id to be deleted");
+            return $this->sendError([
+                'success' => false,
+                'message' => "Object not found",
+                "trans" => "object.errors.detail.not_found",
+            ], Response::HTTP_FORBIDDEN);
         }
     }
 
@@ -317,9 +333,11 @@ class ObjectController extends BaseController
             if ($errorMessages) return $this->sendError($errorMessages);
 
             $classId = $this->request->get('classId');
+            $this->validPermissionOrFail(PermissionServices::TYPE_OBJECTS, $classId, PermissionServices::ACTION_CREATE);
+
             $classValidation = $this->validateClass($classId);
             if (!$classValidation['success']) {
-                return $this->sendError($classValidation);
+                return $this->sendError($classValidation, Response::HTTP_FORBIDDEN);
             }
 
             $className = $classValidation['className'];
@@ -357,7 +375,8 @@ class ObjectController extends BaseController
                         'success' => true, 
                         'message' => 'Create success', 
                         'id' => $object->getId(), 
-                        'classId' => $object->getClassId()
+                        'classId' => $object->getClassId(),
+                        "trans" => "object.success.create_success"
                     ]);
                 }
 
@@ -365,7 +384,11 @@ class ObjectController extends BaseController
                 return $this->sendResponse($data);
             }
 
-            return $this->sendError($className . ' with ' . $key . " already exists");
+            return $this->sendError([
+                'success' => true, 
+                'message' => $className . ' with ' . $key . " already exists",
+                "trans" => "object.errors.detail.duplicate"
+            ], Response::HTTP_FORBIDDEN);
         } catch (\Exception $e) {
             return $this->sendError($e->getMessage());
         }
@@ -410,7 +433,8 @@ class ObjectController extends BaseController
         if (!isset($classConfig['visibleFields']) || ($visibleFields = json_decode($classConfig['visibleFields'], true)) === null) {
             return [
                 'success' => false,
-                'message' => 'Invalid or missing visible fields.'
+                'message' => 'Invalid or missing visible fields.',
+                "trans" => "object.errors.class.invalid_or_missing_visible_fields"
             ];
         }
 
@@ -419,7 +443,8 @@ class ObjectController extends BaseController
         if (!$checkClass || !$className || !class_exists('\\Pimcore\\Model\\DataObject\\' . ucfirst($className))) {
             return [
                 'success' => false,
-                'message' => 'Class not found.'
+                'message' => 'Class not found.',
+                "trans" => "object.errors.class.not_found"
             ];
         }
 
@@ -436,15 +461,23 @@ class ObjectController extends BaseController
         $data = $this->request->get('data');
         if ($data) {
             $data = json_decode($data, true);
-            // try {
+            try {
                 $data = array_merge($data, ['_publish' => $this->request->get('_publish')]);
-                DataObjectServices::saveEdit($objectFromDatabase, $data, $localized);
-                return $this->sendResponse(['success' => true, 'message' => 'Object update success.']);
-            // } catch (\Throwable $th) {
-            //     return $this->sendError(['success' => false, 'message' => $th->getMessage()]);
-            // }
+                $object = DataObjectServices::saveEdit($objectFromDatabase, $data, $localized);
+                if (!($object instanceof DataObject\AbstractObject)) {
+                    return $this->sendError($object);
+                }
+                
+                return $this->sendResponse(['success' => true, 'message' => 'Object update success.',  "trans" => "object.success.update_success"]);
+            } catch (\Throwable $th) {
+                return $this->sendError(['success' => false, 'message' => $th->getMessage()]);
+            }
         }
-        return $this->sendError(['success' => false, 'message' => 'Object update false.']);
+        return $this->sendError([
+            'success' => false, 
+            'message' => 'Object update false.', 
+            "trans" => "object.errors.detail.update_errors"
+        ], Response::HTTP_FORBIDDEN);
     }
 
     private function prepareObjectDataResponse($objectFromDatabase)

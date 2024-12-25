@@ -483,7 +483,7 @@ class AssetController extends BaseController
             $fomat =  $fomat[1];
         }
 
-        $publicURL = AssetServices::getThumbnailPath($item);
+        $publicURL = '';
 
         $json = [
             'id' => $item->getId(),

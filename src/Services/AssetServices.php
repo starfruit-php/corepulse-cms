@@ -2,12 +2,9 @@
 
 namespace CorepulseBundle\Services;
 
-use Google\Service\AIPlatformNotebooks\Status;
-use Pimcore\Db;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use Symfony\Component\HttpFoundation\Response;
 use Pimcore\Model\Asset;
+use Pimcore\Model\DataObject;
+use Pimcore\Model\Document;
 
 class AssetServices
 {
@@ -48,53 +45,146 @@ class AssetServices
         }
     }
 
-    public static function getThumbnailPath($asset)
+    public static function getJson($item)
     {
-        $publicURL ='/bundles/pimcoreadmin/img/flat-color-icons/unknown.svg';
+        $languages = \Pimcore\Tool::getValidLanguages();
 
-        if ($asset) {
-            if ($asset->getType() == "folder") {
-                $publicURL = '/bundles/pimcoreadmin/img/flat-color-icons/folder.svg';
-            } elseif ($asset->getType() == "image") {
-                if ($asset instanceof Asset\Image) {
-                    $arr = [
-                        "id" => $asset->getId(),
-                        "treepreview" => "1",
-                        "_dc" => $asset->getCreationDate(),
-                    ];
-                    $thumbnailConfig = $asset->getThumbnail($arr)->getConfig();
-                    $format = strtolower($thumbnailConfig->getFormat());
-                    if ($format == 'source' || $format == 'print') {
-                        $thumbnailConfig->setFormat('PNG');
-                        $thumbnailConfig->setRasterizeSVG(true);
-                    }
-                    $thumbnailConfig = Asset\Image\Thumbnail\Config::getPreviewConfig();
-                    $thumbnail = $asset->getThumbnail($thumbnailConfig);
+        $format = '';
+        if ($item->getMimeType()) {
+            $format = explode('/', $item->getMimeType());
+            $format = $format[1];
+        }
+
+        $sidebar = [
+            'id' => $item->getId(),
+            'filename' => $item->getFileName(),
+            'publicURL' => $item->getFrontendPath(),
+            'path' => $item->getPath() . $item->getFileName(),
+            'fileSize' => round((int) $item->getFileSize() / (1024 * 1024), 3) . " MB",
+            'fileType' => $format,
+            'type' => $item->getType(),
+            'mimetype' => $item->getMimetype(),
+            'creationDate' => date('Y/m/d', $item->getCreationDate()),
+            'modificationDate' => date('Y/m/d', $item->getModificationDate()),
+        ];
+
+        if ($item->getType() == 'image') {
+            $sidebar['width'] = $item->getWidth();
+            $sidebar['height'] = $item->getHeight();
+        }
+
+        $metaData = [];
+        foreach ($item->getMetaData() as $metaItem) {
+            $metaData[] = self::getMetaData($metaItem);
+        }
+
+        $json = [
+            'sidebar' => $sidebar,
+            'languages' => $languages,
+            'metaData' => $metaData,
+            'customSettings' => $item->getCustomSettings(),
+        ];
+
+        return $json;
+    }
+
+    public static function getMetaData($item)
+    {
+        $name = $item['name'] ?? null;
+        $language = $item['language'] ?? null;
+        $type = $item['type'] ?? null;
+        $element = $item['data'] ?? null;
+
+        $data = null;
+        if ($element) {
+            $data = $element;
+            if ($element instanceof Asset) {
+                $data = [
+                    'type' => 'asset',
+                    'id' => $element->getId(),
+                    'subType' => $element->getType(),
+                    'fullpath' => 'Asset/' . $element->getType() . '/' . $element->getId(),
+                ];
+            } elseif ($element instanceof Document) {
+                $data = [
+                    'type' => 'document',
+                    'id' => $element->getId(),
+                    'subType' => $element->getType(),
+                    'fullpath' => 'Document/' . $element->getType() . '/' . $element->getId(),
+                ];
+            } elseif ($element instanceof DataObject\AbstractObject) {
+                $data = [
+                    'type' => 'object',
+                    'id' => $element->getId(),
+                    'subType' => $element->getClassName(),
+                    'fullpath' => 'DataObject/' . $element->getClassName() . '/' . $element->getId(),
+                ];
+            } elseif ($type === 'date') {
+                $data = date('Y-m-d', $element);
+            } 
+        }
+
+        $item['data'] = $data;
+        return $item;
+    }
+
+    public static function update($asset, $params)
+    {
+        foreach ($params as $key => $value) {
+            $method = 'set' . ucfirst($key);
+            if (method_exists($asset, $method)) {
+                $asset->{$method}($value);
+            }
+        }
+        $asset->save();
+
+        return $asset;
+    }
+
+    public static function updateMetaData($asset, $metaData)
+    {
+        $datas = [];
+        foreach ($metaData as $key => $value) {
+            $data = $value;
+            if (in_array($value['type'], ['asset','document', 'object', 'dataobject'])) {
+                $data['data'] = self::formatDataSave($value['data']);
+            } elseif ($value['type'] === 'date') {
+                $data['data'] = strtotime($value['data']);
+            }
+
+            $datas[] = $data;
+        }
+        $asset->setMetaData($datas);
+        $asset->save();
+        return $asset;
+    } 
+
+    public static function formatDataSave($value)
+    {
+        $data = null;
+        if ($value && is_array($value)) {
+            $type = $value[0] ?? $value['type'] ?? null;
+            $id = $value[2] ?? $value['id'] ?? null;
+            if ($id) {
+                switch (strtolower($type)) {
+                    case 'asset':
+                        $data = Asset::getById($id);
+                        break;
+                    case 'document':
+                        $data = Document::getById($id);
+                        break;
+                    case 'object':
+                    case 'dataobject':
+                        $data = DataObject::getById($id);
+                        break;
     
-                    if ($thumbnail) {
-                        $thumbnail = $thumbnail->getPathReference();
-                        $publicURL = $thumbnail['src'];
-                    } else {
-                        $publicURL = "/admin/asset/get-image-thumbnail?id=" . $asset->getId() . "&treepreview=1&_dc=" . $asset->getCreationDate();
-                    }
+                    default:
+                        $data = null;
+                        break;
                 }
-            } elseif ($asset->getType() == "video") {
-                $publicURL ='/bundles/pimcoreadmin/img/flat-color-icons/video_file.svg';
-            } elseif ($asset->getType() == "document") {
-                $publicURL ='/bundles/pimcoreadmin/img/flat-color-icons/pdf.svg';
-                if (strpos($asset->getFileName(), 'docx')) {
-                    $publicURL ='/bundles/pimcoreadmin/img/flat-color-icons/word.svg';
-                } 
-                if (strpos($asset->getFileName(), 'xlsx')) {
-                    $publicURL ='/bundles/pimcoreadmin/img/flat-color-icons/excel.svg';
-                } 
-            } elseif ($asset->getType() == "text") {
-                $publicURL ='/bundles/pimcoreadmin/img/flat-color-icons/text.svg';
-            } else {
-                $publicURL ='/bundles/pimcoreadmin/img/flat-color-icons/unknown.svg';
             }
         }
 
-        return $publicURL;
+        return $data;
     }
 }

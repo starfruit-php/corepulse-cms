@@ -56,6 +56,10 @@ class UserServices
                 case 'permission':
                     $user->setPermission(json_encode($value));
                     break;
+                case 'role':
+                    $roles = implode(',', $value);
+                    $user->setRole($roles);
+                    break;
                 default:
                     $setValue = 'set' . ucfirst($key);
                     if (method_exists($user, $setValue)) {
@@ -94,31 +98,7 @@ class UserServices
                 'username' => $params['username'],
             ];
         } else {
-            $configPermissions = ['documents', 'assets', 'objects', 'other'];
-            $dataPermissions = [
-                'documents' => [], 
-                'assets' => [], 
-                'objects' => [], 
-                'other' => [],
-            ];
-    
-            foreach ($configPermissions as $item) {
-                if (isset($params[$item])) {
-                    $valueItem = $params[$item];
-                    $valueItem = json_decode($valueItem, true);
-    
-                    if ($valueItem) {
-                        $valueItem = array_map(function ($convert, $index) {
-                            if (is_array($convert)) {
-                                $convert['id'] = (int)$index + 1;
-                            }
-                            
-                            return $convert;
-                        }, $valueItem, array_keys($valueItem));
-                        $dataPermissions[$item] = $valueItem;
-                    }
-                }
-            }
+            $dataPermissions = PermissionServices::convertPermission($params);
     
             $setting = isset($params['setting']) ? json_decode($params['setting'], true) : [];
     

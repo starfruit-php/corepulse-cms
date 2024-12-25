@@ -5,7 +5,7 @@ corepulse_default:
 corepulse_admin:
   resource: "../../src/Controller/Admin"
   type: annotation
-  prefix: "/corepulse"
+  prefix: "/corepulse/cms/api"
 
 corepulse_api:
   resource: "../../src/Controller/Api/*"

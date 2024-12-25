@@ -32,32 +32,34 @@ class ManyToManyRelation extends ManyToOneRelation
                     $type = $value[0] ?? $value['type'] ?? null;
                     $subType = $value[1] ?? $value['subType'] ?? null;
                     $id = $value[2] ?? $value['id'] ?? null;
-                    switch (strtolower($type)) {
-                        case 'asset':
-                            $data = Asset::getById($id);
-                            break;
-                        case 'document':
-                            $data = Document::getById($id);
-                            break;
-                        case 'object':
-                        case 'dataobject':
-                            if ($id) $data = DataObject::getById($id);
-                            else if ($subType) {
-                                $listing = new DataObject\Listing();
-                                $listing->setCondition('className = ?', $subType);
+                    if ($id) {
+                        switch (strtolower($type)) {
+                            case 'asset':
+                                $data = Asset::getById($id);
+                                break;
+                            case 'document':
+                                $data = Document::getById($id);
+                                break;
+                            case 'object':
+                            case 'dataobject':
+                                if ($id) $data = DataObject::getById($id);
+                                else if ($subType) {
+                                    $listing = new DataObject\Listing();
+                                    $listing->setCondition('className = ?', $subType);
 
-                                foreach ($listing as $key => $value) {
-                                    $dataList = DataObject::getById($value->getId());
-                                    if ($dataList) {
-                                        $datas[] = $dataList;
+                                    foreach ($listing as $key => $value) {
+                                        $dataList = DataObject::getById($value->getId());
+                                        if ($dataList) {
+                                            $datas[] = $dataList;
+                                        }
                                     }
                                 }
-                            }
-                            break;
+                                break;
 
-                        default:
-                            $data = null;
-                            break;
+                            default:
+                                $data = null;
+                                break;
+                        }
                     }
                 }
 

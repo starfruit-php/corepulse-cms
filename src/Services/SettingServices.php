@@ -71,4 +71,30 @@ class SettingServices
     {
         return Db::get()->update('corepulse_settings', ['config' => json_encode($data)], ['type' => $type]);
     }
+
+    public static function getOptionData()
+    {
+        $query = 'SELECT `id`, `parentId`, `key`, `path`, `type` FROM `documents`';
+        $document = Db::get()->fetchAllAssociative($query);
+        
+        $query = 'SELECT `id`, `parentId`, `filename` AS `key`, `path`, `type` FROM `assets` WHERE `type` = "folder"';
+        $asset = Db::get()->fetchAllAssociative($query);
+
+        $data = [
+            'documents' => $document,
+            'assets' => $asset,
+            'others' => self::otherSetting(),
+        ];
+
+        return $data;
+    }
+
+    public static function otherSetting()
+    {
+        $data = ['pages', 'overview', 'sitemap', '404-301', 'profile', 'analyticReport', 'liveView', 'notification', 
+            'emails', 'media-library', 'translation', 'catalog', 'inventory', 'discount', 'pricing', 'dashboard', 
+            'customers', 'orders', 'analytic', 'seo', 'report', 'user', 'role', 'setting', 'indexing'];
+
+        return $data;
+    }
 }

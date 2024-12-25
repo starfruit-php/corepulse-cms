@@ -5,6 +5,7 @@ namespace CorepulseBundle\Controller\Api;
 use Symfony\Component\Routing\Annotation\Route;
 use CorepulseBundle\Services\Helper\SearchHelper;
 use Symfony\Component\HttpFoundation\Request;
+use CorepulseBundle\Services\PermissionServices;
 
 /**
  * @Route("/search")
@@ -78,6 +79,35 @@ class SearchController extends BaseController
             foreach($pagination as $item) {
                 $data['data'][] = SearchHelper::getData($item, $type);
             }
+
+            return $this->sendResponse($data);
+        } catch (\Throwable $th) {
+            return $this->sendError($th->getMessage());
+        }
+    }
+
+    /**
+     * @Route("/tree-cascader", name="corepulse_api_search_tree_cascader", methods={"GET", "POST"})
+     */
+    public function treeCascader()
+    {
+        try {
+            $condition = [
+                'type' => 'required|choice:object,document,asset',
+            ];
+            $messageError = $this->validator->validate($condition, $this->request);
+            if($messageError) return $this->sendError($messageError);
+
+            $type = $this->request->get('type');
+            $subType = null;
+
+            $user = $this->getUser();
+            if (!$user->getDefaultAdmin()) {
+                $permissionData = PermissionServices::getPermissionData($user);
+                dd($permissionData);    
+            }
+
+            $data = SearchHelper::getTreeCascader($type, subType: $subType);
 
             return $this->sendResponse($data);
         } catch (\Throwable $th) {

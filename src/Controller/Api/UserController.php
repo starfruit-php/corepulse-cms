@@ -170,6 +170,7 @@ class UserController extends BaseController
                     'assets' => 'json',
                     'documents' => 'json',
                     'objects' => 'json',
+                    'others' => 'json',
                 ];
     
                 $errorMessages = $this->validator->validate($condition, $this->request);
@@ -189,8 +190,9 @@ class UserController extends BaseController
             $roles = [];
             foreach ($listRole as $key => $role) {
                 $roles[] = [
-                    'id' => $role->getId(),
-                    'name' => $role->getName(),
+                    'value' => $role->getId(),
+                    'label' => $role->getName(),
+                    'key' => $role->getName(),
                 ];
             }
 
@@ -198,15 +200,17 @@ class UserController extends BaseController
                 'documents' => [], 
                 'assets' => [], 
                 'objects' => [], 
-                'other' => [],
+                'others' => [],
             ];
+
+            $userRole = $user->getRole() ? explode(',', $user->getRole()) : [];
 
             $data['user'] = [
                 'id' => $user->getId(),
                 'name' => $user->getName(),
                 'email' => $user->getEmail(),
                 'username' => $user->getUsername(),
-                'role' => $user->getRole(),
+                'role' => array_map('intval', $userRole),
                 'active' => $user->getActive(),
                 'password' => '',
                 'permission' => $permission,

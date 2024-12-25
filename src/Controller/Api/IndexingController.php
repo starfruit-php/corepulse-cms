@@ -7,20 +7,25 @@ use CorepulseBundle\Model\Indexing;
 use CorepulseBundle\Services\Helper\ArrayHelper;
 use CorepulseBundle\Services\GoogleServices;
 use Symfony\Component\HttpFoundation\Request;
+use CorepulseBundle\Services\PermissionServices;
 
 /**
  * @Route("/indexing")
  */
 class IndexingController extends BaseController
 {
+    CONST TYPE_PERMISSION = 'indexing';
+
     /**
-     * @Route("/listing", name="api_indexing_listing", methods={"GET"})
+     * @Route("/listing", name="corepulse_api_indexing_listing", methods={"GET"})
      *
      * {mô tả api}
      */
     public function listing()
     {
         try {
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_LISTING);
+
             $orderByOptions = ['id', 'time', 'url', 'type', 'response'];
             $conditions = $this->getPaginationConditions($this->request, $orderByOptions);
             list($page, $limit, $condition) = $conditions;
@@ -31,13 +36,25 @@ class IndexingController extends BaseController
             $conditionQuery = 'id is not NULL';
             $conditionParams = [];
 
+            $filterRule = $this->request->get('filterRule');
+            $filter = $this->request->get('filter');
+
+            if ($filterRule && $filter) {
+                $arrQuery = $this->getQueryCondition($filterRule, $filter);
+
+                if ($arrQuery['query']) {
+                    $conditionQuery .= ' AND (' . $arrQuery['query'] . ')';
+                    $conditionParams = array_merge($conditionParams, $arrQuery['params']);
+                }
+            }
+            
             $listing = new Indexing\Listing();
             $listing->setCondition($conditionQuery, $conditionParams);
-            $listing->load();
 
-            $order_by = $this->request->get('order_by', 'updateAt');
+            $orderKey = $this->request->get('order_by', 'updateAt');
             $order = $this->request->get('order', 'desc');
-            $filter = ArrayHelper::sortArrayByField($listing->getData(), $order_by, $order);
+
+            $filter = $order && $orderKey ? ArrayHelper::sortArrayByField($listing->getData(), $orderKey, $order) : $listing->getData();
 
             $pagination = $this->paginator($filter, $page, $limit);
 
@@ -47,17 +64,17 @@ class IndexingController extends BaseController
             ];
 
             foreach($pagination as $item) {
-                $data['data'][] =  $item->getDataJson();
+                $data['data'][] = $item->getDataJson();
             }
 
             return $this->sendResponse($data);
         } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
     /**
-     * @Route("/status", name="api_indexing_status", methods={"GET", "POST"})
+     * @Route("/status", name="corepulse_api_indexing_status", methods={"GET", "POST"})
      *
      * {mô tả api}
      */
@@ -76,14 +93,18 @@ class IndexingController extends BaseController
     }
 
     /**
-     * @Route("/setting", name="api_indexing_setting", methods={"GET", "POST"})
+     * @Route("/setting", name="corepulse_api_indexing_setting", methods={"GET", "POST"})
      *
      * {mô tả api}
      */
     public function setting()
     {
         try {
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_SETTING);
+
             if ($this->request->getMethod() == Request::METHOD_POST) {
+                $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_SAVE);
+
                 $condition = [
                     'type' => 'required',
                     'value' => '',
@@ -106,7 +127,7 @@ class IndexingController extends BaseController
                     $params['value'] = $this->request->files->get('file');
                 }
 
-                $response = GoogleServices::setConfig($params);
+                $response = GoogleServices::convertParams($params);
 
                 return $this->sendResponse($response);
             }
@@ -118,15 +139,73 @@ class IndexingController extends BaseController
             return $this->sendError($e->getMessage(), 500);
         }
     }
+    
+    /**
+     * @Route("/add", name="corepulse_api_indexing_add", methods={"POST"})
+     */
+    public function add()
+    {
+        try {
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_CREATE);
+
+            $condition = [
+                'url' => 'required',
+            ];
+
+            $messageError = $this->validator->validate($condition, $this->request);
+            if($messageError) return $this->sendError($messageError);
+
+            $url = $this->request->get('url');
+
+            $data = GoogleServices::submitIndex([ 'type' => 'create', 'url' => $url ]);
+
+            if (isset($data['indexing'])) {
+                $data['data'] = $data['indexing']->getDataJson();
+            }
+
+            return $this->sendResponse($data);
+        } catch (\Exception $e) {
+            return $this->sendError($e->getMessage(), 500);
+        }
+    }
 
     /**
-     * @Route("/submit-type", name="api_indexing_submit_type", methods={"POST"})
+     * @Route("/delete", name="corepulse_api_indexing_delete", methods={"GET", "POST"})
+     */
+    public function delete()
+    {
+        try {
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_DELETE);
+    
+            $condition = [
+                'id' => 'required',
+            ];
+
+            $messageError = $this->validator->validate($condition, $this->request);
+            if($messageError) return $this->sendError($messageError);
+
+            $id = $this->request->get('id');
+
+            $data = GoogleServices::deleteAction($id);
+
+            return $this->sendResponse($data);
+        } catch (\Exception $e) {
+            return $this->sendError($e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * @Route("/submit-type", name="corepulse_api_indexing_submit_type", methods={"POST"})
      *
-     * {mô tả api}
+     * {
+     *    type: update-submit | delete-submit | inspection,
+     *    id: string | array,
+     * }
      */
     public function submitType()
     {
         try {
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_SAVE);
             $condition = [
                 'type' => 'required',
                 'id' => 'required',
@@ -137,41 +216,8 @@ class IndexingController extends BaseController
 
             $type = $this->request->get('type');
             $idsOrId = $this->request->get('id');
-
-            if($type == 'create') {
-                $data = GoogleServices::submitIndex([ 'type' => $type, 'url' => $idsOrId ]);
-            } else {
-                $data = GoogleServices::submitType($idsOrId, $type);
-            }
-
-            return $this->sendResponse($data);
-        } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
-        }
-    }
-
-    /**
-     * @Route("/status/detail", name="api_indexing_status_detail", methods={"GET", "POST"})
-     */
-    public function statusDetail()
-    {
-        try {
-            $condition = [
-                'id' => 'required|numeric',
-            ];
-
-            $messageError = $this->validator->validate($condition, $this->request);
-            if($messageError) return $this->sendError($messageError);
-
-
-            $indexing = Indexing::getById($this->request->get('id'));
-            if ($indexing) {
-                $data = $indexing->getDataJson();
-            } else {
-                $data = [
-                    'id' => 'Indexing not found.'
-                ];
-            }
+            
+            $data = GoogleServices::submitType($idsOrId, $type);
 
             return $this->sendResponse($data);
         } catch (\Exception $e) {

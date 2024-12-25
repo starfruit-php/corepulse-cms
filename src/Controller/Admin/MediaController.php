@@ -10,7 +10,7 @@ use Pimcore\Model\Asset;
 use CorepulseBundle\Services\Helper\SearchHelper;
 
 /**
- * @Route("/media")
+ * @Route("/media-admin")
  */
 class MediaController extends BaseController
 {

@@ -14,6 +14,8 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Knp\Component\Pager\PaginatorInterface;
 use Symfony\Component\Process\Process;
+use CorepulseBundle\Services\PermissionServices;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class BaseController extends FrontendController
 {
@@ -39,7 +41,21 @@ class BaseController extends FrontendController
         $this->setLocaleRequest();
     }
 
-     /**
+    public function validPermissionOrFail(string $type, string $key, string $action): void
+    {
+        $user = $this->getUser();
+
+        if ($user->getDefaultAdmin()) {
+            return; // Nếu là admin mặc định thì có toàn quyền.
+        }
+
+        $data = PermissionServices::getPermissionData($user);
+        if (!PermissionServices::isValid($data, $type, $key, $action)) {
+            throw new AccessDeniedHttpException('{"errors":{ "message": "Access denied!", "trans": "errors.access_denied"}}');
+        }
+    }
+
+    /**
      * Assign language to request.
      */
     public function setLocaleRequest()
@@ -256,5 +272,21 @@ class BaseController extends FrontendController
 
         $query = implode($rule, $conditionQuery);
         return ['query' => $query, 'params' => $conditionParams];
+    }
+
+    public function getDefaultPermission()
+    {
+        return [
+            PermissionServices::ACTION_LISTING => true,
+            PermissionServices::ACTION_VIEW => true,
+            PermissionServices::ACTION_SAVE => true,
+            PermissionServices::ACTION_PUBLISH => true,
+            PermissionServices::ACTION_UNPUBLISH => true,
+            PermissionServices::ACTION_DELETE => true,
+            PermissionServices::ACTION_RENAME => true,
+            PermissionServices::ACTION_CREATE => true,
+            PermissionServices::ACTION_SETTING => true,
+            PermissionServices::ACTION_VERSIONS => true,
+        ];
     }
 }

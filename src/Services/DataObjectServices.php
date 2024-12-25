@@ -3,11 +3,12 @@
 namespace CorepulseBundle\Services;
 
 use CorepulseBundle\Services\ClassServices;
+use Pimcore\Model\DataObject;
 
 class DataObjectServices
 {
     // get data listing
-    static public function getData($object, $fields, $backlist = false)
+    public static function getData($object, $fields, $backlist = false)
     {
         $data = [];
         foreach ($fields as $key => $field) {
@@ -33,7 +34,7 @@ class DataObjectServices
         return $data;
     }
 
-    static private function getComponentValue($object, $field)
+    private static function getComponentValue($object, $field)
     {
         $field = self::convertField($field);
         $getClass = '\\CorepulseBundle\\Component\\Field\\' . ucfirst($field['fieldtype']);
@@ -41,7 +42,7 @@ class DataObjectServices
         return class_exists($getClass) ? (new $getClass($object, $field))->getValue() : null;
     }
 
-    static public function getSidebarData($object, $locale = null)
+    public static function getSidebarData($object, $locale = null)
     {
         $fields = ClassServices::systemField();
 
@@ -52,7 +53,7 @@ class DataObjectServices
             $data['languages'][] = [
                 'key' => \Locale::getDisplayLanguage($language),
                 'value' => $language,
-                'selected' => $locale === $language
+                'selected' => $locale === $language,
             ];
         }
 
@@ -60,7 +61,7 @@ class DataObjectServices
     }
 
     // convert object to array
-    static public function convertField($field)
+    public static function convertField($field)
     {
         if (is_object($field)) {
             $result = get_object_vars($field);
@@ -73,7 +74,7 @@ class DataObjectServices
     }
 
     // save object detail
-    static public function saveEdit($object, $updateData, $locale)
+    public static function saveEdit($object, $updateData, $locale)
     {
         $classDefinition = $object->getClass();
         $fieldDefinitions = $classDefinition->getFieldDefinitions();
@@ -83,14 +84,20 @@ class DataObjectServices
                 $object->setPublished($value === 'publish');
                 continue;
             }
-            
+
             if (isset($fieldDefinitions[$key])) {
                 $object = self::processField($object, $fieldDefinitions[$key], $key, $value, $locale);
+                if (!($object instanceof DataObject\AbstractObject)) {
+                    return $object;
+                }
             } elseif (isset($fieldDefinitions['localizedfields'])) {
                 $object->getLocalizedfields()->setObject($object);
                 foreach ($fieldDefinitions['localizedfields']->getChildren() as $k => $v) {
                     if ($v->getName() == $key) {
                         $object = self::processField($object, $v, $key, $value, $locale);
+                        if (!($object instanceof DataObject\AbstractObject)) {
+                            return $object;
+                        }
                     }
                 }
             }
@@ -100,8 +107,9 @@ class DataObjectServices
         return $object;
     }
 
-    static public function processField($object, $fieldDefinition, $key, $value, $locale) {
-        
+    public static function processField($object, $fieldDefinition, $key, $value, $locale)
+    {
+        try {
             $fieldType = $fieldDefinition->getFieldType();
             $getClass = '\\CorepulseBundle\\Component\\Field\\' . ucfirst($fieldType);
 
@@ -111,7 +119,15 @@ class DataObjectServices
 
                 $object->{$func}($component->getDataSave(), $locale);
             }
-        
-        return $object;
+
+            return $object;
+        } catch (\Throwable $th) {
+            $data = [
+                'success' => false,
+                'message' => "Key: " .$fieldDefinition->getTitle() . "\nError: " . $th->getMessage(),
+            ];
+
+            return $data;
+        }
     }
 }

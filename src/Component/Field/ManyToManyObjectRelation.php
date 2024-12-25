@@ -10,19 +10,17 @@ class ManyToManyObjectRelation extends ManyToManyRelation
     {
         $layoutDefinition = $this->layout;
 
-        $classes = $layoutDefinition->classes;
-        $blackList = ["user", "role"];
-        $listObject = self::getClassList($blackList);
+        $classes = self::mapTypes($layoutDefinition->classes, 'classes');
 
-        $data = self::getRelationType($classes, ClassServices::KEY_OBJECT, 'classes', $listObject);
+        $config = [
+            'types' => ['object'],
+            'classes' => $classes,
+        ];
 
-        // if ($options && count($options) == 1) {
-        //     $options = isset($options[0]['children']) ? $options[0]['children'] : [];
-        //     if ($options && count($options) == 1) {
-        //         $options = $options[0]['children'];
-        //     }
-        // }
+        $subtypes = [
+            // 'object' => [],
+        ];
 
-        return $data;
+        return ClassServices::getCommonOptions($config, $subtypes);
     }
 }

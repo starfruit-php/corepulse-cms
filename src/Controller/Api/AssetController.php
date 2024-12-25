@@ -2,17 +2,14 @@
 
 namespace CorepulseBundle\Controller\Api;
 
-use Pimcore\Translation\Translator;
-use Symfony\Component\HttpFoundation\RequestStack;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
+use CorepulseBundle\Services\AssetServices;
+use CorepulseBundle\Services\PermissionServices;
+use Pimcore\Model\Asset;
+use Pimcore\Model\Asset\Service as AssetService;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
-use Knp\Component\Pager\PaginatorInterface;
-use CorepulseBundle\Services\AssetServices;
-use Pimcore\Model\Asset;
-use DateTime;
-use Pimcore\Model\Asset\Service as AssetService;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * @Route("/asset")
@@ -20,7 +17,7 @@ use Pimcore\Model\Asset\Service as AssetService;
 class AssetController extends BaseController
 {
     /**
-     * @Route("/listing", name="api_asset_listing", methods={"GET"})
+     * @Route("/detail/{id}", name="api_asset_detail", methods={"GET", "POST"})
      *
      * {mô tả api}
      *
@@ -30,84 +27,7 @@ class AssetController extends BaseController
      *
      * @throws \Exception
      */
-    public function listing(
-        Request $request,
-        PaginatorInterface $paginator): JsonResponse
-    {
-        try {
-            $this->setLocaleRequest();
-
-            $orderByOptions = ['mimetype'];
-            $conditions = $this->getPaginationConditions($request, $orderByOptions);
-            list($page, $limit, $condition) = $conditions;
-
-            $condition = array_merge($condition, [
-                'folderId' => '',
-                'type' => '',
-            ]);
-            $messageError = $this->validator->validate($condition, $request);
-            if($messageError) return $this->sendError($messageError);
-
-            $conditionQuery = 'id is not NULL';
-            $conditionParams = [];
-
-            $id = $request->get('folderId') ? $request->get('folderId') : 1;
-            if ($id) {
-                $conditionQuery .= ' AND parentId = :parentId';
-                $conditionParams['parentId'] = $id;
-            }
-
-            $type = $request->get('type') ? $request->get('type') : '';
-            if ($type) {
-                $conditionQuery .= ' AND type = :type';
-                $conditionParams['type'] = $type;
-            }
-
-            $search = $request->get('search') ? $request->get('search') : '';
-            if ($search) {
-                $conditionQuery .= " AND LOWER(`filename`)" . " LIKE LOWER('%" . $search . "%')";
-            }
-
-            $list = new Asset\Listing();
-            $list->setOrderKey($request->get('order_by', 'mimetype'));
-            $list->setOrder($request->get('order', 'asc'));
-            $list->setCondition($conditionQuery, $conditionParams);
-            $list->load();
-
-            $paginationData = $this->helperPaginator($paginator, $list, $page, $limit);
-            $data = array_merge(
-                [
-                    'data' => []
-                ],
-                $paginationData,
-            );
-
-            foreach($list as $item)
-            {
-                $data['data'][] = self::listingResponse($item);
-            }
-
-            return $this->sendResponse($data);
-
-        } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
-        }
-    }
-
-    /**
-     * @Route("/detail", name="api_asset_detail", methods={"GET"})
-     *
-     * {mô tả api}
-     *
-     * @param Cache $cache
-     *
-     * @return JsonResponse
-     *
-     * @throws \Exception
-     */
-    public function detail(
-        Request $request,
-        PaginatorInterface $paginator): JsonResponse
+    public function detail(): JsonResponse
     {
         try {
             $this->setLocaleRequest();
@@ -115,20 +35,71 @@ class AssetController extends BaseController
                 'id' => 'required',
             ];
 
-            $errorMessages = $this->validator->validate($condition, $request);
-            if ($errorMessages) return $this->sendError($errorMessages);
-
-            $id = $request->get('id');
-            $item = Asset::getById($id);
-            if ($item) {
-                if ($item->getType() != 'folder') {
-                    $data['data'] = self::detailResponse($item);
-                    return $this->sendResponse($data);
-                }
-                return $this->sendError('Type asset invalid');
+            $errorMessages = $this->validator->validate($condition, $this->request);
+            if ($errorMessages) {
+                return $this->sendError($errorMessages);
             }
-            return $this->sendError('Asset not found');
 
+            $id = $this->request->get('id');
+            $asset = Asset::getById($id);
+            if (!$asset) {
+                return $this->sendError([
+                    'success' => false,
+                    'message' => "Asset not found",
+                    "trans" => "media_library.errors.detail.not_found",
+                ], Response::HTTP_FORBIDDEN);
+            }
+
+            $this->validPermissionOrFail(PermissionServices::TYPE_DOCUMENTS, $id, PermissionServices::ACTION_VIEW);
+            if ($asset->getType() != 'folder') {
+                if ($this->request->isMethod(Request::METHOD_POST)) {
+                    if ($this->request->get('rename')) {
+                        $this->validPermissionOrFail(PermissionServices::TYPE_DOCUMENTS, $id, PermissionServices::ACTION_RENAME);
+                        $filename = $this->request->get('filename');
+                        try {
+                            $update = AssetServices::update($asset, ['filename' => $filename]);
+                            return $this->sendResponse([
+                                'success' => true,
+                                'message' => 'Asset rename success.',
+                                "trans" => "media_library.success.rename_success",
+                            ]);
+                        } catch (\Throwable $th) {
+                            return $this->sendError([
+                                'success' => false,
+                                'message' => $th->getMessage(),
+                            ], Response::HTTP_FORBIDDEN);
+                        }
+                    }
+
+                    $this->validPermissionOrFail(PermissionServices::TYPE_DOCUMENTS, $id, PermissionServices::ACTION_SAVE);
+                    $metaData = $this->request->get('metaData');
+                    if ($metaData) {
+                        $metaData = json_decode($metaData, true);
+                        try {
+                            $update = AssetServices::updateMetaData($asset, $metaData);
+                            return $this->sendResponse([
+                                'success' => true,
+                                'message' => 'Asset update Meta Data success.',
+                                "trans" => "media_library.success.update_success",
+                            ]);
+                        } catch (\Throwable $th) {
+                            return $this->sendError([
+                                'success' => false,
+                                'message' => $th->getMessage(),
+                            ], Response::HTTP_FORBIDDEN);
+                        }
+                    }
+                }
+
+                $data = AssetServices::getJson($asset);
+                return $this->sendResponse($data);
+            }
+
+            return $this->sendError([
+                'success' => false,
+                'message' => "Asset type invalid",
+                "trans" => "media_library.errors.detail.invalid_or_missing",
+            ], Response::HTTP_FORBIDDEN);
         } catch (\Exception $e) {
             return $this->sendError($e->getMessage(), 500);
         }
@@ -146,8 +117,7 @@ class AssetController extends BaseController
      * @throws \Exception
      */
     public function uploadFolder(
-        Request $request): JsonResponse
-    {
+        Request $request): JsonResponse {
         try {
             $condition = [
                 'nameFolder' => 'required',
@@ -155,7 +125,9 @@ class AssetController extends BaseController
             ];
 
             $errorMessages = $this->validator->validate($condition, $request);
-            if ($errorMessages) return $this->sendError($errorMessages);
+            if ($errorMessages) {
+                return $this->sendError($errorMessages);
+            }
 
             $nameFolder = $request->get('nameFolder');
             if ($nameFolder) {
@@ -201,11 +173,13 @@ class AssetController extends BaseController
             ];
 
             $errorMessages = $this->validator->validate($condition, $this->request);
-            if ($errorMessages) return $this->sendError($errorMessages);
+            if ($errorMessages) {
+                return $this->sendError($errorMessages);
+            }
 
             $file = $this->request->files->get("file");
 
-            $parentId = $this->request->get('parentId') ;
+            $parentId = $this->request->get('parentId');
             if (!$parentId) {
                 $parent = Asset::getByPath('/_default_upload_bucket');
                 if (!$parent) {
@@ -226,9 +200,11 @@ class AssetController extends BaseController
 
             $upload = AssetServices::createFile($file, $folder);
 
-            if(!$upload) return $this->sendError(['success' => false, 'message' => 'Upload file error']);
+            if (!$upload) {
+                return $this->sendError(['success' => false, 'message' => 'Upload file error']);
+            }
 
-            return $this->sendResponse([ 'success' => true, 'message' => 'Upload file success', 'id' =>  $upload->getId(), 'parentId' =>  $upload->getParentId() ]);
+            return $this->sendResponse(['success' => true, 'message' => 'Upload file success', 'id' => $upload->getId(), 'parentId' => $upload->getParentId()]);
         } catch (\Exception $e) {
             return $this->sendError($e->getMessage(), 500);
         }
@@ -246,39 +222,51 @@ class AssetController extends BaseController
      * @throws \Exception
      */
     public function delete(
-        Request $request): JsonResponse
-    {
+        Request $request): JsonResponse {
         try {
             $condition = [
                 'id' => 'required',
             ];
 
             $errorMessages = $this->validator->validate($condition, $request);
-            if ($errorMessages) return $this->sendError($errorMessages);
+            if ($errorMessages) {
+                return $this->sendError($errorMessages);
+            }
 
             $itemId = $request->get('id');
             if (is_array($itemId)) {
                 foreach ($itemId as $item) {
-                    $asset_detail = Asset::getById((int)$item);
+                    $asset_detail = Asset::getById((int) $item);
                     if ($asset_detail) {
                         $asset_detail->delete();
                     } else {
-                        return $this->sendError('Can not find photos or folders to be deleted');
+                        return $this->sendError([
+                            'success' => false,
+                            'message' => "Asset not found",
+                            "trans" => "media_library.errors.detail.not_found",
+                        ], Response::HTTP_FORBIDDEN);
                     }
                 }
             } else {
                 if ($itemId) {
-                    $asset_detail = Asset::getById((int)$itemId);
+                    $asset_detail = Asset::getById((int) $itemId);
                     if ($asset_detail) {
                         $asset_detail->delete();
                     } else {
-                        return $this->sendError('Can not find photos or folders to be deleted');
+                        return $this->sendError([
+                            'success' => false,
+                            'message' => "Asset not found",
+                            "trans" => "media_library.errors.detail.not_found",
+                        ], Response::HTTP_FORBIDDEN);
                     }
                 }
             }
 
-            return $this->sendResponse("Delete photos or folders success");
-
+            return $this->sendResponse([
+                'success' => true, 
+                'message' => "Delete asset success",
+                "trans" => "media_library.success.delete_success"
+            ]);
         } catch (\Exception $e) {
             return $this->sendError($e->getMessage(), 500);
         }
@@ -296,8 +284,7 @@ class AssetController extends BaseController
      * @throws \Exception
      */
     public function replaceImage(
-        Request $request): JsonResponse
-    {
+        Request $request): JsonResponse {
         try {
             $condition = [
                 'id' => 'required',
@@ -305,7 +292,9 @@ class AssetController extends BaseController
             ];
 
             $errorMessages = $this->validator->validate($condition, $request);
-            if ($errorMessages) return $this->sendError($errorMessages);
+            if ($errorMessages) {
+                return $this->sendError($errorMessages);
+            }
 
             $id = $request->get('id');
             $file = $request->files->get("file");
@@ -336,8 +325,7 @@ class AssetController extends BaseController
      * @throws \Exception
      */
     public function addAttribute(
-        Request $request): JsonResponse
-    {
+        Request $request): JsonResponse {
         try {
             $condition = [
                 'id' => 'required',
@@ -351,7 +339,9 @@ class AssetController extends BaseController
             ];
 
             $errorMessages = $this->validator->validate($condition, $request);
-            if ($errorMessages) return $this->sendError($errorMessages);
+            if ($errorMessages) {
+                return $this->sendError($errorMessages);
+            }
 
             $itemId = $request->get('id');
             $alt = $request->get('alt');
@@ -363,7 +353,7 @@ class AssetController extends BaseController
             $videoMov = $request->get('videoMov');
             $videoWebm = $request->get('videoWebm');
 
-            $asset_detail = Asset::getById((int)$itemId);
+            $asset_detail = Asset::getById((int) $itemId);
 
             if ($alt) {
                 $asset_detail->addMetadata("alt", "input", $alt, $language);
@@ -374,7 +364,7 @@ class AssetController extends BaseController
             if ($description) {
                 $asset_detail->addMetadata("description", "textarea", $description, $language);
             }
-            if ($fileName && $fileName !=  $asset_detail->getFileName()) {
+            if ($fileName && $fileName != $asset_detail->getFileName()) {
                 $asset_detail->setFileName($fileName);
             }
 
@@ -384,10 +374,9 @@ class AssetController extends BaseController
             $webm = Asset::getByPath($videoWebm);
             $asset_detail->addMetadata("webm", "asset", $webm, $language);
 
-
             $asset_detail->save();
             $data = [
-                'id' => $itemId
+                'id' => $itemId,
             ];
 
             if ($language != 'null') {
@@ -401,8 +390,7 @@ class AssetController extends BaseController
         }
     }
 
-
-     /**
+    /**
      * @Route("/get-meta-data", name="api_asset_get_meta_data", methods={"GET"})
      *
      * {mô tả api}
@@ -414,8 +402,7 @@ class AssetController extends BaseController
      * @throws \Exception
      */
     public function getMetaData(
-        Request $request): JsonResponse
-    {
+        Request $request): JsonResponse {
         try {
             $condition = [
                 'id' => 'required',
@@ -423,12 +410,14 @@ class AssetController extends BaseController
             ];
 
             $errorMessages = $this->validator->validate($condition, $request);
-            if ($errorMessages) return $this->sendError($errorMessages);
+            if ($errorMessages) {
+                return $this->sendError($errorMessages);
+            }
 
             $id = $request->get('id');
             $language = $request->get('lang');
 
-            $item = Asset::getById((int)$id);
+            $item = Asset::getById((int) $id);
             if ($item) {
                 $alt = '';
                 $caption = '';
@@ -480,101 +469,25 @@ class AssetController extends BaseController
         $fomat = '';
         if ($item->getMimeType()) {
             $fomat = explode('/', $item->getMimeType());
-            $fomat =  $fomat[1];
+            $fomat = $fomat[1];
         }
 
-        $publicURL = AssetServices::getThumbnailPath($item);
+        $publicURL = '';
 
         $json = [
             'id' => $item->getId(),
             'file' => $item->getFileName(),
-            'fileName' =>  $item->getFileName(),
+            'fileName' => $item->getFileName(),
             'thumbnail' => $publicURL,
             'creationDate' => ($item->getType() != "folder") ? self::getTimeAgo($item->getCreationDate()) : '',
-            'size' => ($item->getType() != "folder") ? round((int)$item->getFileSize() / (1024 * 1024), 2) . "MB" : '',
+            'size' => ($item->getType() != "folder") ? round((int) $item->getFileSize() / (1024 * 1024), 2) . "MB" : '',
             'parenId' => $item->getParent()?->getId(),
             'type' => ($item->getType() == "folder") ? 'folder' : $item->getType(),
             'fomat' => $fomat,
             'publicURL' => $publicURL,
             'urlDownload' => $item->getPath() . $item->getFileName(),
-            'showPreview' =>  false,
-            'previewURL' => $publicURL
-        ];
-
-        return $json;
-    }
-
-    public function detailResponse($item)
-    {
-        $languages = \Pimcore\Tool::getValidLanguages();
-        $domain = $_SERVER['HTTP_HOST'];
-        $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://';
-        $domain = $protocol . $_SERVER['HTTP_HOST'];
-
-        $fomat = '';
-        if ($item->getMimeType()) {
-            $fomat = explode('/', $item->getMimeType());
-            $fomat =  $fomat[1];
-        }
-
-        $width = 0;
-        $height = 0;
-        if ($item->getType() == 'image') {
-            $width = $item->getWidth();
-            $height = $item->getHeight();
-        }
-
-        $language = $languages[0];
-
-        $alt = '';
-        $caption = '';
-        $description = '';
-        $videoMov = '';
-        $videoWebm = '';
-
-        $metaData = $item->getMetaData();
-        foreach ($metaData as $item) {
-            if (($item['name'] == 'alt') && ($item['language'] == $language)) {
-                $alt = $item['data'];
-            }
-            if (($item['name'] == 'caption') && ($item['language'] == $language)) {
-                $caption = $item['data'];
-            }
-            if (($item['name'] == 'description') && ($item['language'] == $language)) {
-                $description = $item['data'];
-            }
-            if (($item['name'] == 'mov') && ($item['language'] == $language)) {
-                $videoMov = $item['data']->getPath() . $item['data']->getFileName();
-            }
-            if (($item['name'] == 'webm') && ($item['language'] == $language)) {
-                $videoWebm = $item['data']->getPath() . $item['data']->getFileName();
-            }
-        }
-
-        $json = [
-            'id' => $item->getId(),
-            'filename' => $item->getFileName(),
-            'publicURL' => $domain . $item->getPath() . $item->getFileName(),
-            'path' =>  $item->getPath() . $item->getFileName(),
-            'size' => round((int)$item->getFileSize() / (1024 * 1024), 3) . " MB",
-            'fomat' => $fomat,
-            'type' => $item->getType(),
-            'mimetype' => $item->getMimetype(),
-            'width' => $width,
-            'dimensions' => $width . " x " . $height,
-            'uploadOn' => date("M j, Y  H:i", $item->getModificationDate()),
-
-            'data' => ($item->getType() == 'text') ? $item->getData() : '',
-            'languages' => $languages,
-            'attribute' => [
-                'alt' => $alt,
-                'caption' => $caption,
-                'description' => $description,
-                'videoMov' => $videoMov,
-                'videoWebm' => $videoWebm,
-            ],
-
-            'parentId' => $item->getParentId(),
+            'showPreview' => false,
+            'previewURL' => $publicURL,
         ];
 
         return $json;

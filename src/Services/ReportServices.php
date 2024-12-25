@@ -66,13 +66,7 @@ class ReportServices
     {
         $data = [];
         foreach ($column as $key => $value) {
-            $data[] = [
-                'key' => $value['name'],
-                'tooltip' => '',
-                'title' => $value['name'],
-                'removable' => true,
-                'searchType' => 'Input',
-            ];
+            $data[] = $value['name'];
         }
 
         return $data;

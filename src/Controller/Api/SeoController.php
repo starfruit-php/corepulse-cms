@@ -3,22 +3,23 @@
 namespace CorepulseBundle\Controller\Api;
 
 use Symfony\Component\Routing\Annotation\Route;
-use Starfruit\BuilderBundle\Sitemap\Setting;
-use CorepulseBundle\Services\GoogleServices;
 use Pimcore\Db;
 use Symfony\Component\HttpFoundation\Request;
-use CorepulseBundle\Services\Helper\ArrayHelper;
 use CorepulseBundle\Services\SeoServices;
 use Pimcore\Bundle\SeoBundle\Model\Redirect;
 use Pimcore\Model\Document;
 use Pimcore\Model\DataObject;
 use Starfruit\BuilderBundle\Model\Seo;
+use CorepulseBundle\Services\PermissionServices;
+use CorepulseBundle\Services\Helper\ArrayHelper;
 
 /**
  * @Route("/seo")
  */
 class SeoController extends BaseController
 {
+    CONST TYPE_PERMISSION = '404-301';
+
     /**
      * @Route("/404/listing", name="corepulse_api_seo_monitor_listing", methods={"GET", "POST"})
      *
@@ -27,6 +28,8 @@ class SeoController extends BaseController
     public function monitorListing()
     {
         try {
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_LISTING);
+
             $orderByOptions = ['code', 'uri', 'date', 'count', 'id'];
             $conditions = $this->getPaginationConditions($this->request, $orderByOptions);
             list($page, $limit, $condition) = $conditions;
@@ -34,9 +37,12 @@ class SeoController extends BaseController
             $messageError = $this->validator->validate($condition, $this->request);
             if($messageError) return $this->sendError($messageError);
 
-            $orderKey = $this->request->get('order_by', 'date');
-            $order = $this->request->get('order', 'desc');
+            $orderKey = $this->request->get('order_by');
+            $order = $this->request->get('order');
 
+            if (!$orderKey) $orderKey = 'date';
+            if (!$order) $order = 'desc';
+            
             $conditionQuery = '';
             $conditionParams = [];
 
@@ -67,7 +73,7 @@ class SeoController extends BaseController
 
             return $this->sendResponse($data);
         } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
@@ -77,6 +83,8 @@ class SeoController extends BaseController
     public function monitorDetail()
     {
         try {
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_VIEW);
+
             $condition = [
                 'id' => 'required|numeric',
             ];
@@ -95,7 +103,7 @@ class SeoController extends BaseController
 
             return $this->sendResponse($data);
         } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
@@ -105,16 +113,20 @@ class SeoController extends BaseController
     public function monitorTruncate()
     {
         try {
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_DELETE);
+
             $db = Db::get();
             $db->executeQuery('TRUNCATE TABLE http_error_log');
 
             $data = [
                 'success' => true,
+                'message' => "TRUNCATE success",
+                'trans' => 'seo_http.success.truncate_success',
             ];
 
             return $this->sendResponse($data);
         } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
@@ -124,6 +136,8 @@ class SeoController extends BaseController
     public function monitorDelete()
     {
         try {
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_DELETE);
+
             $condition = [
                 'id' => 'required',
             ];
@@ -156,11 +170,13 @@ class SeoController extends BaseController
 
             $data = [
                 'success' => true,
+                'message' => "Delete success",
+                'trans' => 'seo_http.success.delete_success',
             ];
 
             return $this->sendResponse($data);
         } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
@@ -172,17 +188,20 @@ class SeoController extends BaseController
     public function redirectListing()
     {
         try {
-            $orderByOptions = [];
-            $conditions = $this->getPaginationConditions($this->request, $orderByOptions);
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_LISTING);
+
+            $conditions = $this->getPaginationConditions($this->request, []);
             list($page, $limit, $condition) = $conditions;
 
             $messageError = $this->validator->validate($condition, $this->request);
             if($messageError) return $this->sendError($messageError);
 
-            $orderKey = $this->request->get('order_by', 'creationDate');
-            $order = $this->request->get('order', 'asc');
+            $orderKey = $this->request->get('order_by' );
+            $order = $this->request->get('order');
+            if(!$orderKey) $orderKey = 'creationDate';
+            if(!$order) $order = 'asc';
 
-            $conditionQuery = '';
+            $conditionQuery = 'id is not null';
             $conditionParams = [];
 
             $filterRule = $this->request->get('filterRule');
@@ -191,17 +210,15 @@ class SeoController extends BaseController
                 $arrQuery = $this->getQueryCondition($filterRule, $filter);
 
                 if ($arrQuery['query']) {
-                    $conditionQuery .= ' (' . $arrQuery['query'] . ')';
+                    $conditionQuery .= ' AND (' . $arrQuery['query'] . ')';
                     $conditionParams = array_merge($conditionParams, $arrQuery['params']);
                 }
             }
 
             $listing = new Redirect\Listing();
             $listing->setCondition($conditionQuery, $conditionParams);
-            $listing->setOrderKey($orderKey);
-            $listing->setOrder($order);
 
-            // $filter = ArrayHelper::sortArrayByField($listing->getRedirects(), $order_by, $order);
+            $filter = ArrayHelper::sortArrayByField($listing->getRedirects(), $orderKey, $order);
 
             $pagination = $this->paginator($listing->getRedirects(), $page, $limit);
 
@@ -224,17 +241,32 @@ class SeoController extends BaseController
 
             return $this->sendResponse($data);
         } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
     /**
-     * @Route("/301/create", name="corepulse_api_seo_redirect_detail", methods={"POST"})
+     * @Route("/301/add", name="corepulse_api_seo_redirect_detail", methods={"POST"})
      */
     public function redirectCreate()
     {
         try {
-            $data = $this->request->request->all();
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_CREATE);
+
+            $condition = [
+                'type' => 'required',
+                'source' => '',
+                'target' => '',
+            ];
+
+            $messageError = $this->validator->validate($condition, $this->request);
+            if($messageError) return $this->sendError($messageError);
+
+            $data = [
+                'type' => $this->request->get('type'),
+                'source' => $this->request->get('source'),
+                'target' => $this->request->get('target'),
+            ];
 
             $redirect = new Redirect();
 
@@ -242,12 +274,14 @@ class SeoController extends BaseController
 
             $data = [
                 'success' => true,
+                'message' => "create success",
+                'trans' => 'seo_http.success.create_success',
                 'data' => $redirect->getObjectVars(),
             ];
 
             return $this->sendResponse($data);
         } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
@@ -257,6 +291,8 @@ class SeoController extends BaseController
     public function redirectUpdate()
     {
         try {
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_SAVE);
+
             $condition = [
                 'id' => 'required',
             ];
@@ -264,7 +300,15 @@ class SeoController extends BaseController
             $messageError = $this->validator->validate($condition, $this->request);
             if($messageError) return $this->sendError($messageError);
 
-            $data = $this->request->request->all();
+            $active = $this->request->get('active');
+            $data = [
+                'id' => $this->request->get('id'),
+                'type' => $this->request->get('type'),
+                'source' => $this->request->get('source'),
+                'target' => $this->request->get('target'),
+                'active' => filter_var($active, FILTER_VALIDATE_BOOLEAN),
+                'statusCode' => $this->request->get('statusCode'),
+            ];
 
             $redirect = Redirect::getById($data['id']);
 
@@ -272,6 +316,7 @@ class SeoController extends BaseController
                 return $this->sendError([
                     'success' => false,
                     'message' => 'Redirect not found',
+                    'trans' => 'seo_http.errors.redirect.not_found',
                 ]);
             }
 
@@ -279,12 +324,14 @@ class SeoController extends BaseController
 
             $data = [
                 'success' => true,
+                'message' => 'Update Redirect Success',
+                'trans' => 'seo_http.success.redirect.update_success',
                 'data' => $redirect->getObjectVars(),
             ];
 
             return $this->sendResponse($data);
         } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
@@ -294,6 +341,8 @@ class SeoController extends BaseController
     public function redirectDelete()
     {
         try {
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_DELETE);
+
             $condition = [
                 'id' => 'required',
             ];
@@ -305,6 +354,8 @@ class SeoController extends BaseController
 
             $data = [
                 'success' => true,
+                'message' => 'Redirect delete success',
+                'trans' => 'seo_http.success.redirect.delete_success',
             ];
 
             if (is_array($idsOrId)) {
@@ -313,6 +364,8 @@ class SeoController extends BaseController
                     if (!$redirect) {
                         $data['error'][] = $id;
                         $data['success'] = false;
+                        $data['message'] = 'Redirect not found';
+                        $data['trans'] = 'seo_http.errors.redirect.not_found';
                     } else {
                         $redirect->delete();
                     }
@@ -323,6 +376,7 @@ class SeoController extends BaseController
                     return $this->sendError([
                         'success' => false,
                         'message' => 'Redirect not found',
+                        'trans' => 'seo_http.errors.redirect.not_found',
                     ]);
                 }
                 $redirect->delete();
@@ -330,7 +384,7 @@ class SeoController extends BaseController
 
             return $this->sendResponse($data);
         } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
@@ -341,22 +395,27 @@ class SeoController extends BaseController
     {
         $data = [
             [
+                'label' => '301 Permanent Move',
                 'key' => '301 Permanent Move',
                 'value' => 301
             ],
             [
+                'label' => '302 Temporary Move',
                 'key' => '302 Temporary Move',
                 'value' => 302
             ],
             [
+                'label' => '307 Temporary Redirect',
                 'key' => '307 Temporary Redirect',
                 'value' => 307
             ],
             [
+                'label' => '401 Content Deleted',
                 'key' => '401 Content Deleted',
                 'value' => 401
             ],
             [
+                'label' => '451 Content Unavailable',
                 'key' => '451 Content Unavailable',
                 'value' => 451
             ]
@@ -372,18 +431,22 @@ class SeoController extends BaseController
     {
         $data = [
             [
+                'label' => 'Path: /foo',
                 'key' => 'Path: /foo',
                 'value' => 'path'
             ],
             [
+                'label' => 'Auto create',
                 'key' => 'Auto create',
                 'value' => 'auto_create'
             ],
             [
+                'label' => 'Path and Query: /foo?key=value',
                 'key' => 'Path and Query: /foo?key=value',
                 'value' => 'path_query'
             ],
             [
+                'label' => 'Entire URI: https://host.com/foo?key=value',
                 'key' => 'Entire URI: https://host.com/foo?key=value',
                 'value' => 'entire_uri'
             ],
@@ -398,6 +461,8 @@ class SeoController extends BaseController
     public function objectDetail()
     {
         try {
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_VIEW);
+
             $language = $this->request->get('_locale');
             $object = DataObject::getById($this->request->get('id'));
 
@@ -434,7 +499,7 @@ class SeoController extends BaseController
 
             return $this->sendResponse($data);
         } catch (\Throwable $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
@@ -507,6 +572,8 @@ class SeoController extends BaseController
     public function settingAi()
     {
         try {
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_SETTING);
+
             $condition = [ 'setting' => 'required' ];
             $messageError = $this->validator->validate($condition, $this->request);
             if($messageError) return $this->sendError($messageError);
@@ -517,7 +584,7 @@ class SeoController extends BaseController
 
             return $this->sendResponse($data);
         } catch (\Throwable $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
@@ -527,6 +594,8 @@ class SeoController extends BaseController
     public function sendKeyword(Request $request)
     {
         try {
+            $this->validPermissionOrFail(PermissionServices::TYPE_OTHERS, self::TYPE_PERMISSION, PermissionServices::ACTION_SAVE);
+
             $condition = [
                 'keyword' => 'required',
                 '_locale' => 'required',
@@ -545,7 +614,7 @@ class SeoController extends BaseController
 
             return $this->sendResponse($response);
         } catch (\Throwable $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 }

@@ -53,31 +53,7 @@ class RoleServices
                 'name' => $params['name'],
             ];
         } else {
-            $configPermissions = ['documents', 'assets', 'objects', 'other'];
-            $dataPermissions = [
-                'documents' => [], 
-                'assets' => [], 
-                'objects' => [], 
-                'other' => [],
-            ];
-    
-            foreach ($configPermissions as $item) {
-                if (isset($params[$item])) {
-                    $valueItem = $params[$item];
-                    $valueItem = json_decode($valueItem, true);
-    
-                    if ($valueItem) {
-                        $valueItem = array_map(function ($convert, $index) {
-                            if (is_array($convert)) {
-                                $convert['id'] = (int)$index + 1;
-                            }
-                            
-                            return $convert;
-                        }, $valueItem, array_keys($valueItem));
-                        $dataPermissions[$item] = $valueItem;
-                    }
-                }
-            }
+            $dataPermissions = PermissionServices::convertPermission($params);
     
             $setting = isset($params['setting']) ? json_decode($params['setting'], true) : [];
     

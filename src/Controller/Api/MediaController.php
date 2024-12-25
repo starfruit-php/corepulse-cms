@@ -8,6 +8,7 @@ use Symfony\Component\Routing\Annotation\Route;
 use Knp\Component\Pager\PaginatorInterface;
 use Pimcore\Model\Asset;
 use CorepulseBundle\Services\Helper\SearchHelper;
+use CorepulseBundle\Services\PermissionServices;
 
 /**
  * @Route("/media")
@@ -15,7 +16,7 @@ use CorepulseBundle\Services\Helper\SearchHelper;
 class MediaController extends BaseController
 {
     /**
-     * @Route("/get-asset", name="api_get_asset", methods={"GET"})
+     * @Route("/get-asset", name="corepulse_admin_get_asset", methods={"GET"})
      *
      * {mô tả api}
      *
@@ -25,48 +26,40 @@ class MediaController extends BaseController
      *
      * @throws \Exception
      */
-    public function getAsset(): JsonResponse
-    {
+    public function getAsset(
+        Request $request,
+        PaginatorInterface $paginator
+    ): JsonResponse {
         try {
-            $conditions = $this->getPaginationConditions($this->request, []);
+            $conditions = $this->getPaginationConditions($request, []);
             list($page, $limit, $condition) = $conditions;
 
             $condition = array_merge($condition, [
+                'order_by' => '',
+                'order' => '',
                 'id' => '',
                 'filterRule' => '',
                 'filter' => '',
                 'search' => '',
                 'type' => '',
-                'checked' => '',
             ]);
 
-            $messageError = $this->validator->validate($condition, $this->request);
+            $messageError = $this->validator->validate($condition, $request);
             if ($messageError) return $this->sendError($messageError);
 
-            $orderKey = $this->request->get('order_by');
-            $order = $this->request->get('order');
-            $parentId = $this->request->get('id');
-            $checked = $this->request->get('checked', false);
-            if (empty($orderKey)) $orderKey = 'creationDate';
-            if (empty($order)) $order = 'desc';
-            if (empty($parentId)) $parentId = 1;
+            $order_by = $request->get('order_by') ? $request->get('order_by') : 'creationDate';
+            $order = $request->get('order') ? $request->get('order') : 'DESC';
+            $parentId = $request->get('id') ? $request->get('id') : '1';
+            $search = $request->get('search');
+            $type = $request->get('type');
 
-            $search = $this->request->get('search');
-            $type = $this->request->get('type');
+            $this->validPermissionOrFail(PermissionServices::TYPE_ASSETS, $parentId, PermissionServices::ACTION_LISTING);
 
-            $conditionQuery = 'id != 1  AND parentId = :parentId';
+            $conditionQuery = 'id != 1 AND type != "folder" AND parentId = :parentId';
             $conditionParams['parentId'] = $parentId;
 
-            if (!$checked) $conditionQuery .= ' AND type != "folder" ';
-            if ($search) $conditionQuery .= ' AND ' . "LOWER(`filename`)" . " LIKE LOWER('%" . $search . "%')";
-
-            if ($type) {
-                $conditionQuery .= ' AND type = :type';
-                $conditionParams['type'] = $type;
-            }
-
-            $filterRule = $this->request->get('filterRule');
-            $filter = $this->request->get('filter');
+            $filterRule = $request->get('filterRule');
+            $filter = $request->get('filter');
 
             if ($filterRule && $filter) {
                 $arrQuery = $this->getQueryCondition($filterRule, $filter);
@@ -77,45 +70,34 @@ class MediaController extends BaseController
                 }
             }
 
+            if ($search) {
+                $conditionQuery .= ' AND ' . "LOWER(`filename`)" . " LIKE LOWER('%" . $search . "%')";
+            }
+
+            if ($type) {
+                $conditionQuery .= ' AND type = :type';
+                $conditionParams['type'] = $type;
+            }
+
             $listingAsset = new \Pimcore\Model\Asset\Listing();
             $listingAsset->setCondition($conditionQuery, $conditionParams);
-            $listingAsset->setOrderKey($orderKey);
+            $listingAsset->setOrderKey($order_by);
             $listingAsset->setOrder($order);
 
-            $paginationData = $this->paginator($listingAsset, $page, $limit);
+            $user = $this->getUser();
+            $permissionData = PermissionServices::getPermissionData($user);
+            // $listPermission = array_filter($listingAsset->getData(), function($item) use ($user, $permissionData) {
+            //     return $user->getDefaultAdmin() || PermissionServices::isValid($permissionData, PermissionServices::TYPE_ASSETS, $item->getId(), PermissionServices::ACTION_LISTING);
+            // });
+
+            $paginationData = $this->paginator( $listingAsset->getData(), $page, $limit);
+
             $data = [
-                'data' => [],
+                'data' => array_map(function($item) use ($permissionData) {
+                    return self::listingResponse($item, array_column($permissionData[PermissionServices::TYPE_ASSETS], null, 'path'));
+                }, $paginationData->getItems()),
                 'paginationData' => $paginationData->getPaginationData(),
             ];
-
-            foreach ($paginationData as $item) {
-                if ($item->getType() != "folder") {
-                    // $publicURL = AssetServices::getThumbnailPath($item);
-                    $publicURL = $item?->getFrontendPath();
-                    $data['data'][] = [
-                        'id' => $item->getId(),
-                        'type' => $item->getType(),
-                        'mimetype' => $item->getMimetype(),
-                        'filename' => $item->getFileName(),
-                        'fullPath' => $publicURL,
-                        'parentId' => $item->getParentId(),
-                        'checked' => false,
-                        'path' => $item->getFullPath(),
-                    ];
-                } else {
-                    $publicURL = $item?->getFrontendPath();
-                    $data['data'][] = [
-                        'id' => $item->getId(),
-                        'type' => $item->getType(),
-                        'mimetype' => $item->getType(),
-                        'filename' => $item->getFileName(),
-                        'fullPath' => $publicURL,
-                        'parentId' => $item->getParentId(),
-                        'checked' => false,
-                        'path' => $item->getFullPath(),
-                    ];
-                }
-            }
 
             return $this->sendResponse($data);
         } catch (\Exception $e) {
@@ -124,7 +106,7 @@ class MediaController extends BaseController
     }
 
     /**
-     * @Route("/tree-listing-asset", name="api_tree_listing_asset", methods={"GET"})
+     * @Route("/tree-listing-asset", name="corepulse_admin_tree_listing_asset", methods={"GET"})
      *
      * {mô tả api}
      *
@@ -135,20 +117,24 @@ class MediaController extends BaseController
      * @throws \Exception
      */
     public function treeListing(
+        Request $request,
+        PaginatorInterface $paginator
     ): JsonResponse {
         try {
-            $conditions = $this->getPaginationConditions($this->request, []);
+            $conditions = $this->getPaginationConditions($request, []);
             list($page, $limit, $condition) = $conditions;
 
             $condition = array_merge($condition, [
+                'order_by' => '',
+                'order' => '',
                 'filterRule' => '',
                 'filter' => '',
             ]);
-            $messageError = $this->validator->validate($condition, $this->request);
+            $messageError = $this->validator->validate($condition, $request);
             if($messageError) return $this->sendError($messageError);
 
-            $orderBy = $this->request->get('order_by', 'mimetype');
-            $order = $this->request->get('order', 'asc');
+            $orderBy = $request->get('order_by', 'mimetype');
+            $order = $request->get('order', 'asc');
             if ($orderBy == 'key') {
                 $orderBy = 'filename';
             }
@@ -156,8 +142,8 @@ class MediaController extends BaseController
             $conditionQuery = '`parentId` = 0 OR `parentId` = 1 AND type = "folder"';
             $conditionParams = [];
 
-            $filterRule = $this->request->get('filterRule');
-            $filter = $this->request->get('filter');
+            $filterRule = $request->get('filterRule');
+            $filter = $request->get('filter');
 
             if ($filterRule && $filter) {
                 $arrQuery = $this->getQueryCondition($filterRule, $filter);
@@ -204,7 +190,7 @@ class MediaController extends BaseController
     }
 
      /**
-     * @Route("/get-folder", name="api_get_folder", methods={"GET"})
+     * @Route("/get-folder", name="corepulse_admin_get_folder", methods={"GET"})
      *
      * {mô tả api}
      *
@@ -215,15 +201,18 @@ class MediaController extends BaseController
      * @throws \Exception
      */
     public function getFolder(
+        Request $request,
+        PaginatorInterface $paginator
     ): JsonResponse {
         try {
-            $conditions = $this->getPaginationConditions($this->request, []);
+            $orderByOptions = ['creationDate'];
+            $conditions = $this->getPaginationConditions($request, $orderByOptions);
             list($page, $limit, $condition) = $conditions;
 
             $condition = array_merge($condition, [
                 'types' => '',
             ]);
-            $messageError = $this->validator->validate($condition, $this->request);
+            $messageError = $this->validator->validate($condition, $request);
             if($messageError) return $this->sendError($messageError);
 
             $conditionQuery = 'id != 1 AND parentId = :parentId';
@@ -231,7 +220,7 @@ class MediaController extends BaseController
                 'parentId' => 1,
             ];
 
-            $checkType = $this->request->get('types');
+            $checkType = $request->get('types');
             if (!$checkType) $checkType = 'image';
 
             $list = new \Pimcore\Model\Asset\Listing();
@@ -240,18 +229,20 @@ class MediaController extends BaseController
             $list->setOrder('ASC');
             $list->load();
 
-            $paginationData = $this->paginator($list, $page, $limit);
-            $data = [
-                'data' => [],
-                'paginationData' => $paginationData->getPaginationData(),
-            ];
+            $paginationData = $this->helperPaginator($paginator, $list, $page, $limit);
+            $data = array_merge(
+                [
+                    'data' => []
+                ],
+                $paginationData,
+            );
 
             $data['data']['folders'][] = [
                 'id' => 1,
                 'name' => 'Home',
                 'icon' => '/bundles/pimcoreadmin/img/flat-color-icons/home-gray.svg',
             ];
-
+            $images = [];
             foreach ($list as $item) {
                 if ($item->getType() == "folder") {
                     $data['folders'][] = [
@@ -282,7 +273,7 @@ class MediaController extends BaseController
     }
 
     /**
-     * @Route("/tree-children-asset", name="api_tree_children_asset", methods={"GET"})
+     * @Route("/tree-children-asset", name="corepulse_admin_tree_children_asset", methods={"GET"})
      *
      * {mô tả api}
      *
@@ -295,64 +286,86 @@ class MediaController extends BaseController
     public function treeChildrenDoc(
     ): JsonResponse {
         try {
-            $orderByOptions = ['mimetype'];
-            $conditions = $this->getPaginationConditions($this->request, $orderByOptions);
-            list($page, $limit, $condition) = $conditions;
-
-            $condition = array_merge($condition, [
+            $condition = [
                 'id' => 'required',
-                'config' => '',
-            ]);
+            ];
             $messageError = $this->validator->validate($condition, $this->request);
             if($messageError) return $this->sendError($messageError);
 
             $id = $this->request->get('id');
-            $config = $this->request->get('config');
 
-            $datas['data'] = [];
+            $this->validPermissionOrFail(PermissionServices::TYPE_ASSETS, $id, PermissionServices::ACTION_LISTING);
 
             $conditions = '`parentId` = ? AND type = "folder"';
             $params = [ $id ];
+            $listingAsset = new Asset\Listing();
+            $listingAsset->setCondition($conditions, $params);
+            $listingAsset->setOrderKey('mimetype');
+            $listingAsset->setOrder('ASC');
 
-            if($config) {
-                $conditions .= ' AND (';
+            $user = $this->getUser();
+            $permissionData = PermissionServices::getPermissionData($user);
+            $listPermission = array_filter($listingAsset->getData(), function($item) use ($user, $permissionData) {
+                return $user->getDefaultAdmin() || PermissionServices::isValid($permissionData, PermissionServices::TYPE_ASSETS, $item->getId(), PermissionServices::ACTION_LISTING);
+            });
 
-                foreach($config as $key) {
-                    $conditions .= ' `classId` = ? OR ';
-                    $params[] = $key;
-                }
+            $datas = [
+                'data' => array_map(function($item) use ($permissionData) {
+                    return self::listingResponse($item, array_column($permissionData[PermissionServices::TYPE_ASSETS], null, 'path'), true);
+                }, $listPermission),
+            ];
 
-                $conditions .= ' `classId` IS NULL)';
-            }
-
-            $listing = new Asset\Listing();
-            $listing->setCondition($conditions, $params);
-            $listing->setOrderKey('mimetype');
-            $listing->setOrder('ASC');
-
-            foreach ($listing as $item) {
-                $data = [];
-                foreach ($item->getChildren() as $children) {
-                    if ($children->getType() == 'folder') {
-                        $data[] = (string)$children->getId();
-                    }
-                }
-                // $publicURL = AssetServices::getThumbnailPath($item);
-                $publicURL = $item?->getFrontendPath();
-                $datas['data'][] = [
-                    'id' => $item->getId(),
-                    'filename' => $item->getFileName(),
-                    'type' => $item->getType(),
-                    'children' => $data,
-                    'icon' => SearchHelper::getIcon($item->getType()),
-                    'publish' => true,
-                    'image' => $publicURL,
-                ];
-            }
             return $this->sendResponse($datas);
-
         } catch (\Exception $e) {
             return $this->sendError($e->getMessage(), 500);
         }
+    }
+
+    public function listingResponse($item, $permissionData = [], $treeFolder = false)
+    {
+        $id = $item->getId();
+        $data = [
+            'permissions' => [],
+        ];
+
+        if (!$treeFolder) {
+            $publicURL = $item?->getFrontendPath();
+            $data = array_merge($data, [
+                'id' => $id,
+                'type' => $item->getType(),
+                'mimetype' => $item->getMimetype(),
+                'filename' => $item->getFileName(),
+                'fullPath' => $publicURL,
+                'parentId' => $item->getParentId(),
+                'checked' => false,
+                'path' => $item->getFullPath(),
+            ]);
+        } elseif ($treeFolder) {
+            $childs = [];
+            foreach ($item->getChildren() as $children) {
+                if ($children->getType() == 'folder') {
+                    $childs[] = (string)$children->getId();
+                }
+            }
+
+            $publicURL = $item?->getFrontendPath();
+            $data = array_merge($data, [
+                'id' => $item->getId(),
+                'filename' => $item->getFileName(),
+                'type' => $item->getType(),
+                'children' => $childs,
+                'publish' => true,
+                'image' => $publicURL,
+            ]);
+        }
+
+        //fill all permission
+        if (!empty($permissionData)) {
+            $data['permissions'] = PermissionServices::getPermissionsRecursively($permissionData, PermissionServices::TYPE_ASSETS, $id);
+        } elseif ($this->getUser()?->getDefaultAdmin()) {
+            $data['permissions'] = $this->getDefaultPermission();
+        }
+
+        return $data;
     }
 }

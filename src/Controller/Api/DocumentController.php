@@ -3,20 +3,22 @@
 namespace CorepulseBundle\Controller\Api;
 
 use CorepulseBundle\Services\DocumentServices;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\Routing\Annotation\Route;
-use Pimcore\Model\Asset;
-use Pimcore\Model\Document;
+use CorepulseBundle\Services\PermissionServices;
 use Pimcore\Controller\Config\ControllerDataProvider;
-use Pimcore\Model\Document\DocType;
-use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
-use Pimcore\Model\Tool;
 use Pimcore\Document\Editable\EditmodeEditableDefinitionCollector;
 use Pimcore\Document\Renderer\DocumentRenderer;
-use Symfony\Component\HttpKernel\Fragment\FragmentRendererInterface;
+use Pimcore\Model\Asset;
+use Pimcore\Model\Document;
+use Pimcore\Model\Document\DocType;
+use Pimcore\Model\Tool;
 use Pimcore\Templating\Renderer\ActionRenderer;
 use Symfony\Bridge\Twig\Attribute\Template;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Fragment\FragmentRendererInterface;
+use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * @Route("/document")
@@ -34,7 +36,8 @@ class DocumentController extends BaseController
      *
      * @throws \Exception
      */
-    public function listing(): JsonResponse {
+    public function listing(): JsonResponse
+    {
         try {
             $conditions = $this->getPaginationConditions($this->request, []);
             list($page, $limit, $condition) = $conditions;
@@ -46,15 +49,24 @@ class DocumentController extends BaseController
                 'filter' => '',
             ]);
             $messageError = $this->validator->validate($condition, $this->request);
-            if ($messageError) return $this->sendError($messageError);
+            if ($messageError) {
+                return $this->sendError($messageError);
+            }
 
             $conditionQuery = 'id is not NULL';
             $conditionParams = [];
 
             $parentId = $this->request->get('parentId', 1);
+
+            $this->validPermissionOrFail(PermissionServices::TYPE_DOCUMENTS, $parentId == 0 ? 1 : $parentId, PermissionServices::ACTION_LISTING);
+
             if (is_numeric($parentId)) {
-                $conditionQuery .= ' AND parentId = :parentId';
-                $conditionParams['parentId'] = $parentId;
+                if ($parentId == 0) {
+                    $conditionQuery .= ' AND ( parentId = 0 OR parentId = 1 )';
+                } else {
+                    $conditionQuery .= ' AND parentId = :parentId';
+                    $conditionParams['parentId'] = $parentId;
+                }
             }
 
             $type = $this->request->get('type') ? $this->request->get('type') : '';
@@ -77,8 +89,13 @@ class DocumentController extends BaseController
 
             $orderKey = $this->request->get('order_by');
             $order = $this->request->get('order');
-            if (empty($orderKey)) $orderKey = 'index';
-            if (empty($order)) $order = 'desc';
+            if (empty($orderKey)) {
+                $orderKey = 'index';
+            }
+
+            if (empty($order)) {
+                $order = 'desc';
+            }
 
             $list = new Document\Listing();
             $list->setOrderKey($orderKey);
@@ -86,19 +103,28 @@ class DocumentController extends BaseController
             $list->setCondition($conditionQuery, $conditionParams);
             $list->setUnpublished(true);
 
-            $paginationData = $this->paginator( $list, $page, $limit);
+            $user = $this->getUser();
+            $permissionData = PermissionServices::getPermissionData($user);
+
+            $listPermission = array_filter($list->getData(), function ($item) use ($user, $permissionData) {
+                return $user->getDefaultAdmin() || PermissionServices::isValid($permissionData, PermissionServices::TYPE_DOCUMENTS, $item->getId(), PermissionServices::ACTION_LISTING);
+            });
+
+            $paginationData = $this->paginator($listPermission, $page, $limit);
             $data = [
                 'data' => [],
                 'paginationData' => $paginationData->getPaginationData(),
             ];
 
-            foreach ($list as $item) {
-                $data['data'][] = self::listingResponse($item);
-            }
-
+            $data = [
+                'data' => array_map(function ($item) use ($permissionData) {
+                    return self::listingResponse($item, array_column($permissionData[PermissionServices::TYPE_DOCUMENTS], null, 'path'));
+                }, $paginationData->getItems()),
+                'paginationData' => $paginationData->getPaginationData(),
+            ];
             return $this->sendResponse($data);
         } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
@@ -115,18 +141,24 @@ class DocumentController extends BaseController
      */
     public function detail()
     {
-        // try {
+        try {
             $condition = [
                 'id' => 'required',
             ];
 
             $errorMessages = $this->validator->validate($condition, $this->request);
-            if ($errorMessages) return $this->sendError($errorMessages);
+            if ($errorMessages) {
+                return $this->sendError($errorMessages);
+            }
 
             $id = $this->request->get('id');
+            $this->validPermissionOrFail(PermissionServices::TYPE_DOCUMENTS, $id, PermissionServices::ACTION_VIEW);
+
             $document = Document::getById($id);
             if ($document) {
-                if($this->request->isMethod(Request::METHOD_POST)) {
+                if ($this->request->isMethod(Request::METHOD_POST)) {
+                    $this->validPermissionOrFail(PermissionServices::TYPE_DOCUMENTS, $id, PermissionServices::ACTION_SAVE);
+
                     $setting = $this->request->get('setting');
                     if ($setting) {
                         $setting = json_decode($setting, true);
@@ -150,7 +182,11 @@ class DocumentController extends BaseController
 
                     $document->setPublished($this->request->get('_publish') === 'publish');
                     $document->save();
-                    return $this->sendResponse(['success' => true, 'message' => "Update document success"]);
+                    return $this->sendResponse([
+                        'success' => true,
+                        'message' => "Update document success",
+                        "trans" => "pages.success.update_success",
+                    ]);
                 }
 
                 $sidebar = DocumentServices::getSidebar($document);
@@ -163,14 +199,17 @@ class DocumentController extends BaseController
                 if ($document->getType() != 'folder') {
                     $data['data'] = self::detailResponse($document);
                 }
-                
+
                 return $this->sendResponse($data);
             }
-            return $this->sendError("page.not.found");
-
-        // } catch (\Exception $e) {
-        //     return $this->sendError($e->getMessage(), 500);
-        // }
+            return $this->sendError([
+                'success' => false,
+                'message' => "Document not found",
+                "trans" => "pages.errors.detail.not_found",
+            ], Response::HTTP_FORBIDDEN);
+        } catch (\Exception $e) {
+            return $this->sendError($e->getMessage());
+        }
     }
 
     /**
@@ -185,11 +224,21 @@ class DocumentController extends BaseController
             ];
 
             $messageError = $this->validator->validate($condition, $this->request);
-            if ($messageError) return $this->sendError($messageError);
+            if ($messageError) {
+                return $this->sendError($messageError);
+            }
 
-            $document = Document::getById((int) $this->request->get('id'));
+            $id = (int) $this->request->get('id');
+            $this->validPermissionOrFail(PermissionServices::TYPE_DOCUMENTS, $id, PermissionServices::ACTION_VIEW);
+            $document = Document::getById($id);
 
-            if (!$document) return $this->sendResponse([ 'success' => false, 'message' => "Document not found"]);
+            if (!$document) {
+                return $this->sendError([
+                    'success' => false,
+                    'message' => "Document not found",
+                    "trans" => "pages.errors.detail.not_found",
+                ], Response::HTTP_FORBIDDEN);
+            }
 
             $data = [];
             $config = $this->request->get('config');
@@ -218,11 +267,17 @@ class DocumentController extends BaseController
         ];
 
         $errorMessages = $this->validator->validate($condition, $this->request);
-        if ($errorMessages) return $this->sendError($errorMessages);
-        
-        $document = Document::getById((int) $this->request->get('id'));
+        if ($errorMessages) {
+            return $this->sendError($errorMessages);
+        }
 
-        if (!$document) return $this->sendResponse([ 'success' => false, 'message' => "Document not found"]);
+        $id = (int) $this->request->get('id');
+        $this->validPermissionOrFail(PermissionServices::TYPE_DOCUMENTS, $id, PermissionServices::ACTION_VIEW);
+        $document = Document::getById($id);
+
+        if (!$document) {
+            return $this->sendResponse(['success' => false, 'message' => "Document not found"]);
+        }
 
         list($class, $action) = explode('::', $document->getController());
 
@@ -234,17 +289,17 @@ class DocumentController extends BaseController
             if (!$template) {
                 $template = $this->filterRenderTemplate($method);
             }
-            
+
             return $this->render($template, [
-                'editmode' => true
+                'editmode' => true,
             ]);
         } catch (\Throwable $th) {
             //throw $th;
         }
-        
+
         if ($document->getTemplate()) {
             return $this->render($document->getTemplate(), [
-                'editmode' => true
+                'editmode' => true,
             ]);
         }
 
@@ -258,9 +313,9 @@ class DocumentController extends BaseController
             // Lấy giá trị từ Attribute Template
             $templateAttribute = $attributes[0];
             $templateArguments = $templateAttribute->getArguments();
-        
+
             $template = $templateArguments[0] ?? null;
-        
+
             return $template;
         }
 
@@ -269,14 +324,14 @@ class DocumentController extends BaseController
 
     public function filterRenderTemplate($method)
     {
-        
+
         $file = $method->getFileName();
         $startLine = $method->getStartLine();
         $endLine = $method->getEndLine();
-        
+
         $source = file($file);
         $code = implode("", array_slice($source, $startLine - 1, $endLine - $startLine + 1));
-        
+
         $tokens = token_get_all("<?php\n" . $code);
         $lastRenderTemplate = null;
 
@@ -327,14 +382,17 @@ class DocumentController extends BaseController
      *
      * @throws \Exception
      */
-    public function delete(): JsonResponse {
+    public function delete(): JsonResponse
+    {
         try {
             $condition = [
                 'id' => 'required',
             ];
 
             $errorMessages = $this->validator->validate($condition, $this->request);
-            if ($errorMessages) return $this->sendError($errorMessages);
+            if ($errorMessages) {
+                return $this->sendError($errorMessages);
+            }
 
             $ids = $this->request->get('id');
             if (is_array($ids)) {
@@ -343,21 +401,34 @@ class DocumentController extends BaseController
                     if ($document) {
                         $document->delete();
                     } else {
-                        return $this->sendResponse([ 'success' => false, 'message' => "Can not find document to be deleted"]);
+                        return $this->sendError([
+                            'success' => false,
+                            'message' => "Document not found",
+                            "trans" => "pages.errors.detail.not_found",
+                        ], Response::HTTP_FORBIDDEN);
                     }
                 }
             } else {
+                $this->validPermissionOrFail(PermissionServices::TYPE_DOCUMENTS, $ids, PermissionServices::ACTION_DELETE);
                 $document = Document::getById((int) $ids);
                 if ($document) {
                     $document->delete();
                 } else {
-                    return $this->sendResponse([ 'success' => false, 'message' => "Can not find document to be deleted"]);
+                    return $this->sendError([
+                        'success' => false,
+                        'message' => "Document not found",
+                        "trans" => "pages.errors.detail.not_found",
+                    ], Response::HTTP_FORBIDDEN);
                 }
             }
 
-            return $this->sendResponse([ 'success' => true, 'message' => "Delete page success"]);
+            return $this->sendResponse([
+                'success' => true, 
+                'message' => "Delete page success",
+                "trans" => "pages.success.delete_success"
+            ]);
         } catch (\Exception $e) {
-            return $this->sendError($e->getMessage(), 500);
+            return $this->sendError($e->getMessage());
         }
     }
 
@@ -372,7 +443,8 @@ class DocumentController extends BaseController
      *
      * @throws \Exception
      */
-    public function add(): JsonResponse {
+    public function add(): JsonResponse
+    {
         try {
             $condition = [
                 'title' => 'required',
@@ -382,11 +454,17 @@ class DocumentController extends BaseController
             ];
 
             $errorMessages = $this->validator->validate($condition, $this->request);
-            if ($errorMessages) return $this->sendError($errorMessages);
+            if ($errorMessages) {
+                return $this->sendError($errorMessages);
+            }
 
             $title = $this->request->get('title');
-            $parentId = (int)$this->request->get('parentId', 1);
-            if (empty($parentId)) $parentId = 1;
+            $parentId = (int) $this->request->get('parentId', 1);
+            if (empty($parentId)) {
+                $parentId = 1;
+            }
+
+            $this->validPermissionOrFail(PermissionServices::TYPE_DOCUMENTS, $parentId, PermissionServices::ACTION_CREATE);
 
             $type = $this->request->get('type');
             $key = $this->request->get('key');
@@ -397,14 +475,22 @@ class DocumentController extends BaseController
                 $checkPage = Document::getByPath($parent->getFullPath() . $title);
                 if (!$checkPage) {
                     $page = DocumentServices::createDoc($key, $title, $type, $parentId);
-                    if ($page){
-                        $data['data'] = self::listingResponse($page);
+                    if ($page) {
+                        $data['data'] = self::listingResponse($page, []);
                         return $this->sendResponse($data);
                     } else {
-                        return $this->sendError('Create failed');
+                        return $this->sendResponse([
+                            'success' => false,
+                            'message' => "Create Errors",
+                            "trans" => "pages.errors.detail.create_errors",
+                        ]);
                     }
                 } else {
-                    return $this->sendError('Page "' . $title . '" already exists');
+                    return $this->sendResponse([
+                        'success' => false,
+                        'message' => "Already exists",
+                        "trans" => "pages.errors.detail.duplicate",
+                    ]);
                 }
             }
         } catch (\Exception $e) {
@@ -412,10 +498,9 @@ class DocumentController extends BaseController
         }
     }
 
-    // trả ra dữ liệu
-    public function listingResponse($item)
+    // get item json
+    public function listingResponse($item, $permissionData = [])
     {
-
         $draft = $this->checkLastest($item);
         if ($draft) {
             $status = 'Draft';
@@ -427,16 +512,25 @@ class DocumentController extends BaseController
             }
         }
 
+        $id = $item->getId();
         $data = [
-            'id' => $item->getId(),
-            'key' => $item->getId() == 1 ? 'Home' : $item->getKey(),
+            'id' => $id,
+            'key' => $id == 1 ? 'Home' : $item->getKey(),
             'type' => $item->getType(),
             'published' => $status,
             'createDate' => $this->getTimeAgo($item->getCreationDate()),
             'modificationDate' => $this->getTimeAgo($item->getModificationDate()),
-            'parent' => (boolean)DocumentServices::isParent($item->getId()),
+            'parent' => (boolean) DocumentServices::isParent($item->getId()),
             'index' => $item->getIndex(),
+            'permissions' => [],
         ];
+
+        //fill all permission
+        if (!empty($permissionData)) {
+            $data['permissions'] = PermissionServices::getPermissionsRecursively($permissionData, PermissionServices::TYPE_DOCUMENTS, $id);
+        } elseif ($this->getUser()?->getDefaultAdmin()) {
+            $data['permissions'] = $this->getDefaultPermission();
+        }
 
         return $data;
     }
@@ -449,7 +543,7 @@ class DocumentController extends BaseController
         if ($seo) {
             if (method_exists($seo, 'getImageAsset')) {
                 $idImage = $seo->getImageAsset();
-                $asset = Asset::getById((int)$idImage);
+                $asset = Asset::getById((int) $idImage);
                 if ($asset) {
                     $seoImage = $asset->getFullPath();
                 }
@@ -460,15 +554,14 @@ class DocumentController extends BaseController
         $listEmail = [];
         if ($document->getType() == "email") {
             $list = new Tool\Email\Log\Listing();
-            $list->setCondition('documentId = ' . (int)$document->getId());
+            $list->setCondition('documentId = ' . (int) $document->getId());
             $list->setLimit(50);
             $list->setOffset(0);
             $list->setOrderKey('sentDate');
             $list->setOrder('DESC');
 
-
             $data = $list->load();
-            foreach($data as $item) {
+            foreach ($data as $item) {
                 $type = 'text';
                 if (($item->getEmailLogExistsHtml() == 1 && $item->getEmailLogExistsText() == 1) || ($item->getEmailLogExistsHtml() == 1 && $item->getEmailLogExistsText() != 1)) {
                     $type = 'html';
@@ -492,11 +585,11 @@ class DocumentController extends BaseController
 
         $json = [
             'image' => $seoImage,
-            'listEmail' => $listEmail
+            'listEmail' => $listEmail,
         ];
 
-        $params = ['id', 'title', 'prettyUrl', 'description', 'controller', 'template', 'path', 'key', 
-                'type', 'subject', 'from', 'replyTo', 'to', 'cc', 'bcc', 'href'];
+        $params = ['id', 'title', 'prettyUrl', 'description', 'controller', 'template', 'path', 'key',
+            'type', 'subject', 'from', 'replyTo', 'to', 'cc', 'bcc', 'href'];
 
         foreach ($params as $item) {
             $method = "get" . ucfirst($item);
@@ -540,11 +633,15 @@ class DocumentController extends BaseController
         ];
 
         $errorMessages = $this->validator->validate($condition, $this->request);
-        if ($errorMessages) return $this->sendError($errorMessages);
+        if ($errorMessages) {
+            return $this->sendError($errorMessages);
+        }
 
         $document = Document::getById($this->request->get('id'));
 
-        if (!$document) return $this->sendResponse([ 'success' => false, 'message' => "Document not found"]);
+        if (!$document) {
+            return $this->sendResponse(['success' => false, 'message' => "Document not found"]);
+        }
 
         // get document type
         $listDocType = new DocType\Listing();
@@ -562,9 +659,9 @@ class DocumentController extends BaseController
             $dataItem = $type->getObjectVars();
 
             $result[] = array_merge($dataItem, [
-                'key' => $dataItem['name'], 
+                'key' => $dataItem['name'],
                 'label' => $dataItem['name'],
-                'value' => $dataItem['id']
+                'value' => $dataItem['id'],
             ]);
         }
 

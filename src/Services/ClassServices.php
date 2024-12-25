@@ -296,4 +296,112 @@ class ClassServices
 
         return $data;
     }
+
+    public static function getCommonOptions($config, $subtypes, $defaultTypes = ['asset', 'object', 'document'])
+    {
+        $data = [];
+        $allType = isset($config['types']) && count($config['types']) ? $config['types'] : $defaultTypes;
+
+        if (in_array('asset', $allType)) {
+            $listAsset = isset($subtypes['asset']) && count($subtypes['asset']) ? $subtypes['asset'] : ['archive', 'image', 'audio', 'document', 'text', 'folder', 'video', 'unknown'];
+            $data[] = self::getRelationType(ClassServices::KEY_ASSET, $listAsset);
+        }
+
+        if (in_array('document', $allType)) {
+            $listDocument = isset($subtypes['document']) && count($subtypes['document']) ? $subtypes['document'] : ['email', 'link', 'hardlink', 'snippet', 'folder', 'page'];
+            $data[] = self::getRelationType(ClassServices::KEY_DOCUMENT, $listDocument);
+        }
+
+        if (in_array('object', $allType)) {
+            $listObject = isset($config['classes']) && count($config['classes']) ? $config['classes'] : self::getClassList(["user", "role"]);
+            $subObject = isset($subtypes['object']) && count($subtypes['object']) ? $subtypes['object'] : ['object', 'variant', 'folder'];
+            $data[] = self::getRelationType(ClassServices::KEY_OBJECT, $listObject, $subObject);
+        }
+
+        return $data;
+    }
+
+    static public function getRelationType($type, $listKey, $subObject = null)
+    {
+        $options = [
+            'label' => $type,
+            'value' => $type,
+            'children' => [],
+            'publish' => true,
+        ];
+
+        foreach ($listKey as $value) {
+            $children = self::getRelationData($value, $type, $subObject);
+
+            if (!empty($children)) {
+                $options['children'][] = [
+                    'label' => $value,
+                    'value' => $value,
+                    'children' => $children,
+                    'publish' => true,
+                ];
+            }
+        }
+
+        return $options;
+    }
+
+    //type : loại trường đc cấu hình; model : asset, object , document
+    public static function getRelationData($type, $model, $subtypeObject = null)
+    {
+        $data = [];
+
+        try {
+            $isObject = $model === ClassServices::KEY_OBJECT;
+            $isSpecificType = $type !== 'All' && $type !== 'folder';
+
+            $modelName = $isObject && $isSpecificType
+                ? "Pimcore\\Model\\{$model}\\{$type}\\Listing"
+                : "Pimcore\\Model\\{$model}\\Listing";
+
+            $listing = new $modelName();
+
+            if ($listing) {
+                if ($model !== ClassServices::KEY_ASSET) {
+                    $listing->setUnpublished(true);
+                }
+
+                if (($model !== ClassServices::KEY_OBJECT || $type === 'folder') && $isSpecificType) {
+                    $listing->setCondition('type = ?', [$type]);
+                }
+
+                if ($isObject && $isSpecificType && !empty($subtypeObject)) {
+                    $listing->setObjectTypes($subtypeObject);
+                }
+
+                $data = array_map(function ($item) use ($model) {
+                    $key = $model === ClassServices::KEY_ASSET
+                        ? $item->getFilename()
+                        : $item->getKey();
+
+                    return [
+                        'key' => $key,
+                        'value' => $item->getId(),
+                        'type' => $model,
+                        'label' => $key,
+                        'publish' => $model !== ClassServices::KEY_ASSET ? $item->getPublished() : true,
+                    ];
+                }, iterator_to_array($listing));
+            }
+        } catch (\Throwable $th) {
+        }
+
+        return $data;
+    }
+    static public function getClassList($blackList)
+    {
+        $query = 'SELECT * FROM `classes` WHERE id NOT IN ("' . implode('","', $blackList) . '")';
+        $classListing = Db::get()->fetchAllAssociative($query);
+        $data = [];
+        foreach ($classListing as $class) {
+            $data[] = $class['name'];
+        }
+
+        return $data;
+    }
 }

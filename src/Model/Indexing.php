@@ -254,6 +254,14 @@ class Indexing extends AbstractModel
             'internalValue' => $this->getInternalValue(),
             'status' => $this->getStatus(),
             'result' => json_decode($this->getResult(), true),
+            'coverageState' => null,
+            'crawledAs' => null,
+            'googleCanonical' => null,
+            'indexingState' => null,
+            'pageFetchState' => null,
+            'robotsTxtState' => null,
+            'userCanonical' => null,
+            'verdict' => null,
         ];
 
         $indexStatusResult = [];
